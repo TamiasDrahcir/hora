@@ -355,6 +355,151 @@ body.tech-theme .page-title {
 .calendar-day + .calendar-day { border-left: 0; }
 .day-blocks { min-height: 420px; }
 
+.schedule-settings {
+  display: grid;
+  gap: 1rem;
+}
+
+.time-grid-calendar {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(980px, 1fr);
+  overflow-x: auto;
+  border: 1px solid var(--stoic-border);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.time-grid-axis {
+  position: relative;
+  padding-top: 3.2rem;
+}
+
+.time-grid-axis-spacer,
+.time-grid-day-header {
+  height: 3.2rem;
+}
+
+.time-grid-time-label {
+  position: absolute;
+  right: 0.5rem;
+  transform: translateY(-50%);
+  font-size: 0.72rem;
+  color: var(--stoic-text);
+}
+
+.time-grid-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(140px, 1fr));
+}
+
+.time-grid-day {
+  min-width: 140px;
+  border-left: 1px solid var(--stoic-border);
+}
+
+.time-grid-day-header {
+  margin: 0;
+  padding: 0.85rem 0.5rem;
+  border-bottom: 1px solid var(--stoic-border);
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.time-grid-lane {
+  position: relative;
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 63px, var(--stoic-border) 64px);
+}
+
+.time-grid-hour-line {
+  position: absolute;
+  right: 0;
+  left: 0;
+  border-top: 1px dotted var(--stoic-border);
+}
+
+.time-grid-block {
+  position: absolute;
+  right: 0.25rem;
+  left: 0.25rem;
+  z-index: 1;
+  overflow: hidden;
+  padding: 0.35rem;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 3px;
+  color: #fff;
+  font-size: 0.72rem;
+  line-height: 1.2;
+  cursor: grab;
+}
+
+.time-grid-block:active { cursor: grabbing; }
+.time-grid-block.completed { opacity: 0.58; filter: saturate(0.65); }
+.time-grid-block-heading { display: flex; justify-content: space-between; gap: 0.25rem; }
+.time-grid-meta { display: block; }
+.time-grid-remove { padding: 0; border: 0; background: transparent; color: inherit; }
+.time-grid-badge { display: inline-block; margin-top: 0.15rem; font-size: 0.65rem; }
+.time-grid-check { display: block; margin-top: 0.2rem; font-size: 0.65rem; }
+.time-grid-check input { margin-right: 0.2rem; }
+
+.candidate-block {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 7rem;
+  padding: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  color: #fff;
+}
+
+body.tech-theme .time-grid-calendar,
+body.tech-theme .candidate-lane {
+  border-color: var(--tech-text);
+  background: transparent;
+}
+
+body.tech-theme .time-grid-day,
+body.tech-theme .time-grid-day-header,
+body.tech-theme .time-grid-calendar,
+body.tech-theme .time-grid-hour-line {
+  border-color: var(--tech-border);
+}
+
+body.tech-theme .time-grid-lane {
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 63px, rgba(0, 255, 65, 0.25) 64px);
+}
+
+body.tech-theme .container-app table,
+body.tech-theme .container-app .table,
+body.tech-theme .container-app .table > :not(caption) > * > * {
+  --bs-table-bg: transparent;
+  --bs-table-striped-bg: transparent;
+  --bs-table-color: var(--tech-text);
+  background-color: transparent;
+  color: var(--tech-text);
+  border-color: var(--tech-border);
+}
+
+body.tech-theme .container-app .form-control,
+body.tech-theme .container-app .form-select,
+body.tech-theme .modal-content .form-control,
+body.tech-theme .modal-content .form-select {
+  background-color: #10182b;
+  color: var(--tech-text);
+  border-color: var(--tech-border);
+}
+
+body.tech-theme .container-app .form-control:focus,
+body.tech-theme .container-app .form-select:focus,
+body.tech-theme .modal-content .form-control:focus,
+body.tech-theme .modal-content .form-select:focus {
+  background-color: #10182b;
+  color: var(--tech-text);
+  border-color: var(--tech-text);
+  box-shadow: 0 0 0 0.2rem rgba(0, 255, 65, 0.2);
+}
+
+body.tech-theme .container-app input[type='checkbox'] {
+  accent-color: var(--tech-text);
+}
+
 .candidate-lane {
   margin-top: 1.5rem;
   padding: 1rem;
@@ -372,6 +517,7 @@ body.tech-theme .page-title {
 @media (max-width: 768px) {
   .container-app { padding: 1rem 1rem 3rem; }
   .availability-row, .time-slot-row { grid-template-columns: 1fr 1fr; }
+  .time-grid-calendar { grid-template-columns: 3.5rem minmax(980px, 1fr); }
 }
 
 .schedule-block:hover {

@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { Card, Button, Container, Row, Col, Table, Form } from 'react-bootstrap';
+import { Card, Button, Container, Table, Form } from 'react-bootstrap';
 import type { Task, ScheduleBlock, WeeklySchedule, AvailabilityInterval } from '../types';
 import { scheduleWeek } from '../scheduler';
-import { DAYS_OF_WEEK, timeToMinutes } from '../utils';
+import { DAYS_OF_WEEK, minutesToTime, timeToMinutes } from '../utils';
+import TimeGridCalendar from '../components/TimeGridCalendar';
 
 interface SchedulePageProps {
   tasks: Task[];
@@ -32,26 +33,6 @@ const SchedulePage: React.FC<SchedulePageProps> = ({
     return schedule;
   }, [tasks, schedule, totalAvailableHours, availability]);
 
-  const blocksByDay = useMemo(() => {
-    const blocks: Record<string, ScheduleBlock[]> = {};
-    DAYS_OF_WEEK.forEach(day => {
-      blocks[day] = generatedSchedule.blocks
-        .filter(b => b.dayOfWeek === day)
-        .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
-    });
-    return blocks;
-  }, [generatedSchedule]);
-
-  const getPriorityColor = (priority: string): string => {
-    const colors = {
-      earth: '#7F5F00',
-      water: '#0E87CC',
-      fire: '#CF352E',
-      air: '#B38ED2',
-    };
-    return colors[priority as keyof typeof colors] || '#999';
-  };
-
   const handleGenerateSchedule = () => {
     const newSchedule = scheduleWeek(tasks, totalAvailableHours, availability);
     onScheduleUpdate(newSchedule);
@@ -67,13 +48,34 @@ const SchedulePage: React.FC<SchedulePageProps> = ({
     });
   };
 
+  const handleMoveBlock = (block: ScheduleBlock, dayOfWeek: string, startTime: string) => {
+    const endTime = minutesToTime(timeToMinutes(startTime) + block.durationMinutes);
+    const overlaps = generatedSchedule.blocks.some(other =>
+      other.id !== block.id &&
+      other.dayOfWeek === dayOfWeek &&
+      timeToMinutes(startTime) < timeToMinutes(other.endTime) &&
+      timeToMinutes(endTime) > timeToMinutes(other.startTime)
+    );
+    if (overlaps) return;
+
+    const inCandidates = candidateBlocks.some(candidate => candidate.id === block.id);
+    const movedBlock = { ...block, dayOfWeek, startTime, endTime };
+    onScheduleUpdate({
+      ...generatedSchedule,
+      blocks: inCandidates
+        ? [...generatedSchedule.blocks, movedBlock]
+        : generatedSchedule.blocks.map(item => item.id === block.id ? movedBlock : item),
+    });
+    if (inCandidates) setCandidateBlocks(current => current.filter(candidate => candidate.id !== block.id));
+  };
+
 
   return (
     <Container className="fade-in">
       <h1 className="page-title">Weekly Schedule</h1>
 
-      <Row className="mb-4">
-        <Col md={4}>
+      <div className="schedule-settings mb-4">
+        <div>
           <Card className="card-stoic p-3">
             <Card.Body>
               <h6>Schedule Settings</h6>
@@ -101,8 +103,8 @@ const SchedulePage: React.FC<SchedulePageProps> = ({
               </Button>
             </Card.Body>
           </Card>
-        </Col>
-        <Col md={8}>
+        </div>
+        <div>
           <Card className="card-stoic p-3">
             <Card.Body>
               <h6>Schedule Summary</h6>
@@ -124,93 +126,17 @@ const SchedulePage: React.FC<SchedulePageProps> = ({
               </Table>
             </Card.Body>
           </Card>
-        </Col>
-      </Row>
-
-      <div className="schedule-view week-calendar">
-        {DAYS_OF_WEEK.map(day => (
-          <div key={day} className="calendar-day" onDragOver={event => event.preventDefault()} onDrop={event => {
-            const candidateId = event.dataTransfer.getData('candidateId');
-            const candidate = candidateBlocks.find(block => block.id === candidateId);
-            if (candidate) {
-              onScheduleUpdate({ ...generatedSchedule, blocks: [...generatedSchedule.blocks, { ...candidate, dayOfWeek: day }] });
-              setCandidateBlocks(current => current.filter(block => block.id !== candidateId));
-              return;
-            }
-            const blockId = event.dataTransfer.getData('blockId');
-            if (blockId) {
-              onScheduleUpdate({
-                ...generatedSchedule,
-                blocks: generatedSchedule.blocks.map(block => block.id === blockId ? { ...block, dayOfWeek: day } : block),
-              });
-            }
-          }}>
-            <h5 style={{ borderBottom: '2px solid var(--stoic-border)', paddingBottom: '0.5rem' }}>
-              {day}
-            </h5>
-            {blocksByDay[day].length > 0 ? (
-              <div className="day-blocks">
-                {blocksByDay[day].map(block => (
-                  <Card
-                    key={block.id}
-                    draggable
-                    onDragStart={event => event.dataTransfer.setData('blockId', block.id)}
-                    className="schedule-block"
-                    style={{
-                      backgroundColor: block.completed ? '#f0f0f0' : getPriorityColor(block.priority),
-                      opacity: block.completed ? 0.6 : 1,
-                    }}
-                  >
-                    <Card.Body className="p-2">
-                      <div className="d-flex justify-content-between align-items-start">
-                        <div>
-                          <h6 className="mb-1">
-                            {block.taskCode}
-                            {block.objectiveCode && <span className="ms-2 text-muted">{block.objectiveCode}</span>}
-                          </h6>
-                          <small className="text-muted">
-                            {block.startTime} - {block.endTime} ({block.durationMinutes / 60}h)
-                          </small>
-                          {block.isSporadic && <div className="badge bg-warning mt-1">Sporadic</div>}
-                          {block.completed && <div className="badge bg-success mt-1">Completed</div>}
-                        </div>
-                        <Button
-                          variant="link"
-                          size="sm"
-                          className="text-danger p-0"
-                          onClick={() => handleRemoveBlock(block.id)}
-                        >
-                          ✕
-                        </Button>
-                      </div>
-                      {block.description && <small className="text-muted d-block mt-2">{block.description}</small>}
-                    </Card.Body>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              <div className="text-muted p-3 border" style={{ borderColor: 'var(--stoic-border)' }}>
-                <small>No scheduled blocks for {day}</small>
-              </div>
-            )}
-          </div>
-        ))}
+        </div>
       </div>
 
-      <section className="candidate-lane" onDragOver={event => event.preventDefault()} onDrop={event => {
-        const blockId = event.dataTransfer.getData('blockId');
-        if (blockId) handleRemoveBlock(blockId);
-      }}>
-        <h5>Candidate lane</h5>
-        <div className="candidate-blocks">
-          {candidateBlocks.map(block => (
-            <Card key={block.id} draggable onDragStart={event => event.dataTransfer.setData('candidateId', block.id)} className="schedule-block" style={{ backgroundColor: getPriorityColor(block.priority) }}>
-              <Card.Body className="p-2">{block.taskCode}<br /><small>{block.durationMinutes} min</small></Card.Body>
-            </Card>
-          ))}
-          {candidateBlocks.length === 0 && <small className="text-muted">Removed blocks stay here until you place them again.</small>}
-        </div>
-      </section>
+      <TimeGridCalendar
+        blocks={generatedSchedule.blocks}
+        candidateBlocks={candidateBlocks}
+        editable
+        showCandidateLane
+        onMoveBlock={handleMoveBlock}
+        onRemoveBlock={handleRemoveBlock}
+      />
 
       <div className="mt-4 text-center">
         <Button

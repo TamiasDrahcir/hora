@@ -299,29 +299,6 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate,
                 maxLength={7}
               />
             </Form.Group>
-            <Form.Check
-              className="mb-3"
-              type="switch"
-              label="Repeat this task in future weeks"
-              checked={formData.recurring}
-              onChange={(e) => setFormData({ ...formData, recurring: e.target.checked })}
-            />
-            {(formData.priority === 'earth' || formData.priority === 'fire') && (
-              <Form.Group className="mb-3">
-                <Form.Label>Required weekly time slots</Form.Label>
-                {formData.timeSlots.map((slot, index) => (
-                  <div className="time-slot-row" key={`${slot.dayOfWeek}-${index}`}>
-                    <Form.Select value={slot.dayOfWeek} onChange={(e) => setFormData({ ...formData, timeSlots: formData.timeSlots.map((item, itemIndex) => itemIndex === index ? { ...item, dayOfWeek: e.target.value } : item) })}>
-                      {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => <option key={day}>{day}</option>)}
-                    </Form.Select>
-                    <Form.Control type="time" value={slot.startTime} onChange={(e) => setFormData({ ...formData, timeSlots: formData.timeSlots.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: e.target.value } : item) })} />
-                    <Form.Control type="time" value={slot.endTime} onChange={(e) => setFormData({ ...formData, timeSlots: formData.timeSlots.map((item, itemIndex) => itemIndex === index ? { ...item, endTime: e.target.value } : item) })} />
-                    <Button variant="outline-danger" onClick={() => setFormData({ ...formData, timeSlots: formData.timeSlots.filter((_, itemIndex) => itemIndex !== index) })}>Remove</Button>
-                  </div>
-                ))}
-                <Button variant="outline-secondary" size="sm" onClick={() => setFormData({ ...formData, timeSlots: [...formData.timeSlots, { dayOfWeek: 'Monday', startTime: '09:00', endTime: '10:00' }] })}>Add time slot</Button>
-              </Form.Group>
-            )}
             <Form.Group className="mb-3">
               <Form.Label>Task Code</Form.Label>
               <Form.Control
@@ -340,12 +317,12 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate,
               />
             </Form.Group>
             <Form.Group className="mb-3">
-              <Form.Label>Hours Required</Form.Label>
+              <Form.Label>Description (Optional)</Form.Label>
               <Form.Control
-                type="number"
-                min={1}
-                value={formData.hoursRequired}
-                onChange={(e) => setFormData({ ...formData, hoursRequired: parseInt(e.target.value) || 1 })}
+                as="textarea"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                rows={3}
               />
             </Form.Group>
             <Form.Group className="mb-3">
@@ -360,29 +337,55 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate,
                 <option value="air">Air (Flexible & Less Important)</option>
               </Form.Select>
             </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label>Deadline</Form.Label>
-              <Form.Select
-                value={formData.deadline}
-                onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
-              >
-                <option value="Monday">Monday</option>
-                <option value="Tuesday">Tuesday</option>
-                <option value="Wednesday">Wednesday</option>
-                <option value="Thursday">Thursday</option>
-                <option value="Friday">Friday</option>
-                <option value="Weekend">Weekend</option>
-              </Form.Select>
-            </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label>Description (Optional)</Form.Label>
-              <Form.Control
-                as="textarea"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                rows={3}
-              />
-            </Form.Group>
+            {(formData.priority === 'earth' || formData.priority === 'fire') ? (
+              <Form.Group className="mb-3">
+                <Form.Label>Required weekly time slots</Form.Label>
+                {formData.timeSlots.map((slot, index) => (
+                  <div className="time-slot-row" key={`${slot.dayOfWeek}-${index}`}>
+                    <Form.Select value={slot.dayOfWeek} onChange={(e) => setFormData({ ...formData, timeSlots: formData.timeSlots.map((item, itemIndex) => itemIndex === index ? { ...item, dayOfWeek: e.target.value } : item) })}>
+                      {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => <option key={day}>{day}</option>)}
+                    </Form.Select>
+                    <Form.Control type="time" value={slot.startTime} onChange={(e) => setFormData({ ...formData, timeSlots: formData.timeSlots.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: e.target.value } : item) })} />
+                    <Form.Control type="time" value={slot.endTime} onChange={(e) => setFormData({ ...formData, timeSlots: formData.timeSlots.map((item, itemIndex) => itemIndex === index ? { ...item, endTime: e.target.value } : item) })} />
+                    <Button variant="outline-danger" onClick={() => setFormData({ ...formData, timeSlots: formData.timeSlots.filter((_, itemIndex) => itemIndex !== index) })}>Remove</Button>
+                  </div>
+                ))}
+                <Button variant="outline-secondary" size="sm" onClick={() => setFormData({ ...formData, timeSlots: [...formData.timeSlots, { dayOfWeek: 'Monday', startTime: '09:00', endTime: '10:00' }] })}>Add time slot</Button>
+              </Form.Group>
+            ) : (
+              <>
+                <Form.Group className="mb-3">
+                  <Form.Label>Hours Required</Form.Label>
+                  <Form.Control
+                    type="number"
+                    min={1}
+                    value={formData.hoursRequired}
+                    onChange={(e) => setFormData({ ...formData, hoursRequired: parseInt(e.target.value) || 1 })}
+                  />
+                </Form.Group>
+                <Form.Group className="mb-3">
+                  <Form.Label>Deadline</Form.Label>
+                  <Form.Select
+                    value={formData.deadline}
+                    onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
+                  >
+                    <option value="Monday">Monday</option>
+                    <option value="Tuesday">Tuesday</option>
+                    <option value="Wednesday">Wednesday</option>
+                    <option value="Thursday">Thursday</option>
+                    <option value="Friday">Friday</option>
+                    <option value="Weekend">Weekend</option>
+                  </Form.Select>
+                </Form.Group>
+              </>
+            )}
+            <Form.Check
+              className="mb-3"
+              type="switch"
+              label="Repeat this task in future weeks"
+              checked={formData.recurring}
+              onChange={(e) => setFormData({ ...formData, recurring: e.target.checked })}
+            />
           </Form>
         </Modal.Body>
         <Modal.Footer>

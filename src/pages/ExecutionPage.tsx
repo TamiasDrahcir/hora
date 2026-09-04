@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { Card, Button, Container, Row, Col, Table, Alert } from 'react-bootstrap';
 import type { WeeklySchedule } from '../types';
-import { calculateBalance, DAYS_OF_WEEK, timeToMinutes } from '../utils';
+import { calculateBalance, DAYS_OF_WEEK } from '../utils';
+import TimeGridCalendar from '../components/TimeGridCalendar';
 
 interface ExecutionPageProps {
   schedule: WeeklySchedule | null;
@@ -52,16 +53,6 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
     };
   }, [schedule]);
 
-  const getPriorityColor = (priority: string): string => {
-    const colors = {
-      earth: '#7F5F00',
-      water: '#0E87CC',
-      fire: '#CF352E',
-      air: '#B38ED2',
-    };
-    return colors[priority as keyof typeof colors] || '#999';
-  };
-
   if (!schedule || !stats) {
     return (
       <Container className="fade-in">
@@ -72,13 +63,6 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
       </Container>
     );
   }
-
-  const blocksByDay = DAYS_OF_WEEK.slice(0, 5).reduce((acc, day) => {
-    acc[day] = schedule.blocks
-      .filter(b => b.dayOfWeek === day)
-      .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
-    return acc;
-  }, {} as Record<string, typeof schedule.blocks>);
 
   const deadlineAlerts = schedule.blocks
     .filter(block => !block.completed && block.objectiveCode)
@@ -160,66 +144,10 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
         </Col>
       </Row>
 
-      <div className="schedule-view">
-        {DAYS_OF_WEEK.slice(0, 5).map(day => (
-          <div key={day} className="mb-5">
-            <h5 style={{ borderBottom: '2px solid var(--stoic-border)', paddingBottom: '0.5rem' }}>
-              {day}
-            </h5>
-            {blocksByDay[day].length > 0 ? (
-              <div className="day-blocks">
-                {blocksByDay[day].map(block => (
-                  <Card
-                    key={block.id}
-                    className={`schedule-block ${block.completed ? 'completed' : ''}`}
-                    style={{
-                      borderLeftColor: getPriorityColor(block.priority),
-                      backgroundColor: block.completed ? '#f0f0f0' : 'white',
-                      opacity: block.completed ? 0.7 : 1,
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => onBlockCompletion(block.id, !block.completed)}
-                  >
-                    <Card.Body className="p-2">
-                      <div className="d-flex justify-content-between align-items-start">
-                        <div className="flex-grow-1">
-                          <div className="d-flex align-items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={block.completed}
-                              onChange={(e) => {
-                                e.stopPropagation();
-                                onBlockCompletion(block.id, e.target.checked);
-                              }}
-                            />
-                            <div>
-                              <h6 className="mb-1" style={{ textDecoration: block.completed ? 'line-through' : 'none' }}>
-                                {block.taskCode}
-                                {block.objectiveCode && <span className="ms-2 text-muted">{block.objectiveCode}</span>}
-                              </h6>
-                              <small className="text-muted">
-                                {block.startTime} - {block.endTime} ({block.durationMinutes / 60}h)
-                              </small>
-                              {block.isSporadic && <div className="badge bg-warning ms-2">Sporadic</div>}
-                            </div>
-                          </div>
-                          {block.description && (
-                            <small className="text-muted d-block mt-2">{block.description}</small>
-                          )}
-                        </div>
-                      </div>
-                    </Card.Body>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              <div className="text-muted p-3 border" style={{ borderColor: 'var(--stoic-border)' }}>
-                <small>No scheduled blocks for {day}</small>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      <TimeGridCalendar
+        blocks={schedule.blocks.filter(block => DAYS_OF_WEEK.slice(0, 5).includes(block.dayOfWeek))}
+        onBlockCompletion={onBlockCompletion}
+      />
 
       <div className="mt-4 text-center">
         <Button

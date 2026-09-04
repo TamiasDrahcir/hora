@@ -198,10 +198,11 @@ const ReportPage: React.FC<ReportPageProps> = ({ schedule, tasks, onNavigate }) 
         <Card.Body>
           <h6>Daily reports</h6>
           <div className="report-tabs">
-            {DAYS_OF_WEEK.map(day => <Button key={day} disabled={isReportLocked(day)} variant={selectedReport === day ? 'dark' : 'outline-secondary'} onClick={() => setSelectedReport(day)}>{day} Report{isReportLocked(day) ? ' (Locked)' : ''}</Button>)}
-            <Button disabled={isReportLocked('Weekly')} variant={selectedReport === 'Weekly' ? 'dark' : 'outline-secondary'} onClick={() => setSelectedReport('Weekly')}>Weekly Report{isReportLocked('Weekly') ? ' (Locked)' : ''}</Button>
+            {DAYS_OF_WEEK.map(day => <Button key={day} variant={selectedReport === day ? 'dark' : 'outline-secondary'} onClick={() => setSelectedReport(day)}>{day} Report{isReportLocked(day) ? ' (Locked)' : ''}</Button>)}
+            <Button variant={selectedReport === 'Weekly' ? 'dark' : 'outline-secondary'} onClick={() => setSelectedReport('Weekly')}>Weekly Report{isReportLocked('Weekly') ? ' (Locked)' : ''}</Button>
           </div>
-          {selectedLocked ? <p className="small text-muted mt-3">This report is locked after 11:59 PM in your local time.</p> : (
+          {selectedLocked && <p className="small text-muted mt-3">This report is locked after 11:59 PM in your local time. These are the final recorded values.</p>}
+          {
             <Table striped size="sm" className="mt-3">
               <tbody>
                 <tr><td>Scheduled hours</td><td>{(selectedBlocks.reduce((sum, block) => sum + block.durationMinutes, 0) / 60).toFixed(1)}h</td></tr>
@@ -209,7 +210,7 @@ const ReportPage: React.FC<ReportPageProps> = ({ schedule, tasks, onNavigate }) 
                 <tr><td>Blocks</td><td>{selectedBlocks.length}</td></tr>
               </tbody>
             </Table>
-          )}
+          }
           {/*
             <li>
               You scheduled {report.totalScheduledHours.toFixed(1)} out of {report.totalAvailableHours} available hours
