@@ -3,6 +3,21 @@
 export type Priority = 'earth' | 'water' | 'fire' | 'air';
 export type BlockType = 'floater' | 'anchor';
 export type AdjustmentType = 'mothball' | 'loan' | 'abandon' | 'add';
+export type TaskMode = 'rigid' | 'flexible';
+export type RecurrenceScope = 'this-week' | 'future-weeks';
+
+export interface LocalUser {
+  id: string;
+  username: string;
+  passwordHash: string;
+  createdAt: string;
+}
+
+export interface DevlogEntry {
+  id: string;
+  timestamp: string;
+  message: string;
+}
 
 export interface Objective {
   id: string;
@@ -23,7 +38,19 @@ export interface Task {
   deadline: string; // day of week
   objectives: Objective[];
   priority: Priority;
+  mode: TaskMode;
   completed: boolean;
+  recurring?: boolean;
+  recurrenceTemplateId?: string;
+  weekOverrides?: Record<string, Partial<Pick<Task, 'hoursRequired' | 'deadline' | 'timeSlots'>>>;
+  timeSlots?: Array<{ dayOfWeek: string; startTime: string; endTime: string }>;
+}
+
+export interface AvailabilityInterval {
+  dayOfWeek: string;
+  startTime: string;
+  endTime: string;
+  recurring?: boolean;
 }
 
 export interface ScheduleBlock {
@@ -44,6 +71,7 @@ export interface ScheduleBlock {
   completedAt?: Date;
   isSporadic: boolean;
   description?: string;
+  deadline?: string;
 }
 
 export interface WeeklySchedule {
@@ -52,6 +80,9 @@ export interface WeeklySchedule {
   totalAvailableHours: number;
   totalAnchorHours: number;
   totalObjectiveHours: number;
+  availability?: AvailabilityInterval[];
+  candidates?: ScheduleBlock[];
+  warnings?: string[];
 }
 
 export interface WeeklyReport {
@@ -79,7 +110,8 @@ export interface AppState {
   tasks: Task[];
   schedule: WeeklySchedule | null;
   report: WeeklyReport | null;
-  currentView: 'setup' | 'schedule' | 'execution' | 'report' | 'adjustments';
+  currentView: 'setup' | 'schedule' | 'execution' | 'report' | 'help' | 'devlog' | 'adjustments';
   availableHoursPerDay: number;
   currentWeekStartDate: Date;
+  devlog: DevlogEntry[];
 }

@@ -1,7 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Card, Button, Container, Row, Col, Table, ProgressBar } from 'react-bootstrap';
 import type { Task, WeeklySchedule } from '../types';
-import { calculateBalance } from '../utils';
+import { calculateBalance, DAYS_OF_WEEK } from '../utils';
 
 interface ReportPageProps {
   schedule: WeeklySchedule | null;
@@ -10,6 +10,8 @@ interface ReportPageProps {
 }
 
 const ReportPage: React.FC<ReportPageProps> = ({ schedule, tasks, onNavigate }) => {
+  const [selectedReport, setSelectedReport] = useState('Weekly');
+  const activeSchedule = schedule as WeeklySchedule;
   const report = useMemo(() => {
     if (!schedule) return null;
 
@@ -22,12 +24,12 @@ const ReportPage: React.FC<ReportPageProps> = ({ schedule, tasks, onNavigate }) 
     const totalTaskPercentage = (totalTaskHours / totalAvailableHours) * 100;
 
     const completedObjectiveHours = schedule.blocks
-      .filter(b => b.completed && b.blockType === 'anchor')
+      .filter(b => b.completed)
       .reduce((sum, b) => sum + b.durationMinutes, 0) / 60;
 
     const anchorMinutesPassed = schedule.blocks
       .filter(b => b.blockType === 'anchor')
-      .reduce((sum, b) => sum + (b.completed ? b.durationMinutes : 0), 0);
+      .reduce((sum, b) => sum + b.durationMinutes, 0);
 
     const balance = calculateBalance(completedObjectiveHours, anchorMinutesPassed);
 
@@ -50,7 +52,7 @@ const ReportPage: React.FC<ReportPageProps> = ({ schedule, tasks, onNavigate }) 
     // Calculate per-hour balance (simplified)
     const perHourBalance: Array<{ hour: number; balance: number }> = [];
     let cumulativeBalance = 0;
-    schedule.blocks
+    [...schedule.blocks]
       .sort((a, b) => {
         const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
         return (
@@ -85,10 +87,24 @@ const ReportPage: React.FC<ReportPageProps> = ({ schedule, tasks, onNavigate }) 
       perHourBalance,
       totalBlocks: schedule.blocks.length,
       completedBlocks: schedule.blocks.filter(b => b.completed).length,
+      completedScheduledHours: completedObjectiveHours,
     };
   }, [schedule, tasks]);
 
-  if (!report) {
+  const isReportLocked = (reportName: string): boolean => {
+    const dayIndex = reportName === 'Weekly' ? 6 : DAYS_OF_WEEK.indexOf(reportName);
+    const lockDate = new Date(activeSchedule.weekStartDate);
+    lockDate.setDate(lockDate.getDate() + dayIndex);
+    lockDate.setHours(23, 59, 59, 999);
+    return new Date() > lockDate;
+  };
+
+  const selectedBlocks = selectedReport === 'Weekly'
+    ? activeSchedule.blocks
+    : activeSchedule.blocks.filter(block => block.dayOfWeek === selectedReport);
+  const selectedLocked = isReportLocked(selectedReport);
+
+  if (!report || !schedule) {
     return (
       <Container className="fade-in">
         <h1 className="page-title">Weekly Report</h1>
@@ -130,74 +146,19 @@ const ReportPage: React.FC<ReportPageProps> = ({ schedule, tasks, onNavigate }) 
             <Card.Body>
               <h6>Completion Status</h6>
               <ProgressBar
-                now={(report.completedBlocks / report.totalBlocks) * 100}
-                label={`${report.completedBlocks} / ${report.totalBlocks}`}
+                now={report.totalScheduledHours ? (report.completedScheduledHours / report.totalScheduledHours) * 100 : 0}
+                label={`${report.completedScheduledHours.toFixed(1)}h / ${report.totalScheduledHours.toFixed(1)}h`}
                 className="mb-3"
               />
               <Table striped size="sm">
                 <tbody>
                   <tr>
-                    <td>Objectives Completed:</td>
-                    <td>{report.completedBlocks}</td>
+                    <td>Scheduled hours completed:</td>
+                    <td>{report.completedScheduledHours.toFixed(1)}h</td>
                   </tr>
                   <tr>
-                    <td>Total Objectives:</td>
-                    <td>{report.totalBlocks}</td>
-                  </tr>
-                </tbody>
-              </Table>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
-
-      <Row className="mb-4">
-        <Col md={6}>
-          <Card className="card-stoic p-3">
-            <Card.Body>
-              <h6>Load Summary</h6>
-              <Table striped size="sm">
-                <tbody>
-                  <tr>
-                    <td>Scheduled Load:</td>
-                    <td>{report.totalScheduledHours.toFixed(1)}h / {report.totalAvailableHours}h</td>
-                  </tr>
-                  <tr>
-                    <td>Scheduled %:</td>
-                    <td>{report.scheduledPercentage.toFixed(1)}%</td>
-                  </tr>
-                  <tr>
-                    <td>Total Task Hours:</td>
-                    <td>{report.totalTaskHours}h</td>
-                  </tr>
-                  <tr>
-                    <td>Task %:</td>
-                    <td>{report.totalTaskPercentage.toFixed(1)}%</td>
-                  </tr>
-                </tbody>
-              </Table>
-            </Card.Body>
-          </Card>
-        </Col>
-        <Col md={6}>
-          <Card className="card-stoic p-3">
-            <Card.Body>
-              <h6>Execution Metrics</h6>
-              <Table striped size="sm">
-                <tbody>
-                  <tr>
-                    <td>Hours Completed:</td>
-                    <td>{report.completedObjectiveHours.toFixed(1)}h</td>
-                  </tr>
-                  <tr>
-                    <td>Anchor Hours Passed:</td>
-                    <td>{(report.anchorMinutesPassed / 60).toFixed(1)}h</td>
-                  </tr>
-                  <tr>
-                    <td>Temporal Balance:</td>
-                    <td className={report.isPositive ? 'balance-positive' : 'balance-negative'}>
-                      {report.isPositive ? '+' : '−'}{report.balanceHours}h {report.balanceMinutes}m
-                    </td>
+                    <td>Total scheduled hours:</td>
+                    <td>{report.totalScheduledHours.toFixed(1)}h</td>
                   </tr>
                 </tbody>
               </Table>
@@ -209,39 +170,47 @@ const ReportPage: React.FC<ReportPageProps> = ({ schedule, tasks, onNavigate }) 
       <Card className="card-stoic p-3 mb-4">
         <Card.Body>
           <h6>Load by Priority</h6>
-          <Table striped size="sm">
-            <thead>
-              <tr>
-                <th>Priority</th>
-                <th>Hours</th>
-                <th>Blocks</th>
-                <th>% of Total</th>
-              </tr>
-            </thead>
-            <tbody>
+          <div className="priority-report">
+            <div className="priority-pie" style={{ background: `conic-gradient(#7F5F00 0 ${report.totalScheduledHours ? report.loadByPriority.earth.hours / report.totalScheduledHours * 360 : 0}deg, #0E87CC 0 ${report.totalScheduledHours ? (report.loadByPriority.earth.hours + report.loadByPriority.water.hours) / report.totalScheduledHours * 360 : 0}deg, #CF352E 0 ${report.totalScheduledHours ? (report.loadByPriority.earth.hours + report.loadByPriority.water.hours + report.loadByPriority.fire.hours) / report.totalScheduledHours * 360 : 0}deg, #B38ED2 0 360deg)` }} />
+            <Table striped size="sm">
+              <tbody>
               {(['earth', 'water', 'fire', 'air'] as const).map(priority => {
                 const data = report.loadByPriority[priority];
-                const percentage = (data.hours / report.totalScheduledHours) * 100;
+                const percentage = report.totalScheduledHours ? (data.hours / report.totalScheduledHours) * 100 : 0;
                 return (
                   <tr key={priority}>
                     <td>
                       <span className={`priority-${priority}`}>{priority.toUpperCase()}</span>
                     </td>
                     <td>{data.hours.toFixed(1)}h</td>
-                    <td>{data.count}</td>
                     <td>{percentage.toFixed(1)}%</td>
                   </tr>
                 );
               })}
-            </tbody>
-          </Table>
+              </tbody>
+            </Table>
+          </div>
         </Card.Body>
       </Card>
 
+      {/* Key insights are intentionally omitted until the report model is finalized. */}
       <Card className="card-stoic p-3 mb-4">
         <Card.Body>
-          <h6>Key Insights</h6>
-          <ul>
+          <h6>Daily reports</h6>
+          <div className="report-tabs">
+            {DAYS_OF_WEEK.map(day => <Button key={day} disabled={isReportLocked(day)} variant={selectedReport === day ? 'dark' : 'outline-secondary'} onClick={() => setSelectedReport(day)}>{day} Report{isReportLocked(day) ? ' (Locked)' : ''}</Button>)}
+            <Button disabled={isReportLocked('Weekly')} variant={selectedReport === 'Weekly' ? 'dark' : 'outline-secondary'} onClick={() => setSelectedReport('Weekly')}>Weekly Report{isReportLocked('Weekly') ? ' (Locked)' : ''}</Button>
+          </div>
+          {selectedLocked ? <p className="small text-muted mt-3">This report is locked after 11:59 PM in your local time.</p> : (
+            <Table striped size="sm" className="mt-3">
+              <tbody>
+                <tr><td>Scheduled hours</td><td>{(selectedBlocks.reduce((sum, block) => sum + block.durationMinutes, 0) / 60).toFixed(1)}h</td></tr>
+                <tr><td>Completed hours</td><td>{(selectedBlocks.filter(block => block.completed).reduce((sum, block) => sum + block.durationMinutes, 0) / 60).toFixed(1)}h</td></tr>
+                <tr><td>Blocks</td><td>{selectedBlocks.length}</td></tr>
+              </tbody>
+            </Table>
+          )}
+          {/*
             <li>
               You scheduled {report.totalScheduledHours.toFixed(1)} out of {report.totalAvailableHours} available hours
               ({report.scheduledPercentage.toFixed(1)}%)
@@ -261,7 +230,7 @@ const ReportPage: React.FC<ReportPageProps> = ({ schedule, tasks, onNavigate }) 
                 ? `Earth priority takes up ${((report.loadByPriority.earth.hours / report.totalScheduledHours) * 100).toFixed(1)}% of your time`
                 : 'No earth priority tasks scheduled'}
             </li>
-          </ul>
+          */}
         </Card.Body>
       </Card>
 

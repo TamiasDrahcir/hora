@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Button, Form, Modal, Container, Row, Col, Table } from 'react-bootstrap';
+import { Card, Button, Form, Modal, Container, Row, Col, Table, Alert } from 'react-bootstrap';
 import { v4 as uuidv4 } from 'uuid';
 import type { Task, Objective, Priority } from '../types';
 import { generateTaskCode } from '../utils';
@@ -8,9 +8,10 @@ interface SetupPageProps {
   tasks: Task[];
   onTasksUpdate: (tasks: Task[]) => void;
   onNavigate: (view: string) => void;
+  currentWeekStartDate: Date;
 }
 
-const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate }) => {
+const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate, currentWeekStartDate }) => {
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [formData, setFormData] = useState({
@@ -21,6 +22,8 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate 
     deadline: 'Friday',
     priority: 'water' as Priority,
     description: '',
+    recurring: false,
+    timeSlots: [] as Array<{ dayOfWeek: string; startTime: string; endTime: string }>,
   });
   const [objectiveForm, setObjectiveForm] = useState({
     code: '',
@@ -43,6 +46,8 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate 
         deadline: task.deadline,
         priority: task.priority,
         description: task.description || '',
+        recurring: task.recurring || false,
+        timeSlots: task.timeSlots || [],
       });
     } else {
       setEditingTask(null);
@@ -54,6 +59,8 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate 
         deadline: 'Friday',
         priority: 'water',
         description: '',
+        recurring: false,
+        timeSlots: [],
       });
     }
     setShowTaskModal(true);
@@ -69,9 +76,12 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate 
       hoursRequired: formData.hoursRequired,
       deadline: formData.deadline,
       priority: formData.priority,
+      mode: formData.priority === 'earth' || formData.priority === 'fire' ? 'rigid' : 'flexible',
       description: formData.description,
       objectives: editingTask?.objectives || [],
       completed: editingTask?.completed || false,
+      recurring: formData.recurring,
+      timeSlots: formData.timeSlots,
     };
 
     if (editingTask) {
@@ -104,7 +114,7 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate 
     onTasksUpdate(
       tasks.map(t =>
         t.id === selectedTaskId
-          ? { ...t, objectives: [...t.objectives, objective], hoursRequired: t.hoursRequired + objectiveForm.hours }
+          ? { ...t, objectives: [...t.objectives, objective] }
           : t
       )
     );
@@ -117,11 +127,9 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate 
     onTasksUpdate(
       tasks.map(t => {
         if (t.id === taskId) {
-          const objective = t.objectives.find(o => o.id === objectiveId);
           return {
             ...t,
             objectives: t.objectives.filter(o => o.id !== objectiveId),
-            hoursRequired: Math.max(t.hoursRequired - (objective?.hoursRequired || 0), 0),
           };
         }
         return t;
@@ -130,10 +138,16 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate 
   };
 
   const totalHours = tasks.reduce((sum, t) => sum + t.hoursRequired, 0);
+  const objectiveHours = selectedTaskId
+    ? (tasks.find(task => task.id === selectedTaskId)?.objectives.reduce((sum, objective) => sum + objective.hoursRequired, 0) || 0)
+    : 0;
+  const objectiveOverflow = objectiveHours + objectiveForm.hours > (tasks.find(task => task.id === selectedTaskId)?.hoursRequired || 0);
+  const weekLabel = currentWeekStartDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
 
   return (
     <Container className="fade-in">
       <h1 className="page-title">Setup Your Tasks</h1>
+      <p className="week-label">Planning week starting {weekLabel}</p>
       
       <Row className="mb-4">
         <Col>
@@ -224,6 +238,7 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate 
                         setSelectedTaskId(task.id);
                         setShowObjectiveModal(true);
                       }}
+                      disabled={task.hoursRequired <= 1}
                     >
                       Add Objective
                     </Button>
@@ -284,6 +299,29 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate 
                 maxLength={7}
               />
             </Form.Group>
+            <Form.Check
+              className="mb-3"
+              type="switch"
+              label="Repeat this task in future weeks"
+              checked={formData.recurring}
+              onChange={(e) => setFormData({ ...formData, recurring: e.target.checked })}
+            />
+            {(formData.priority === 'earth' || formData.priority === 'fire') && (
+              <Form.Group className="mb-3">
+                <Form.Label>Required weekly time slots</Form.Label>
+                {formData.timeSlots.map((slot, index) => (
+                  <div className="time-slot-row" key={`${slot.dayOfWeek}-${index}`}>
+                    <Form.Select value={slot.dayOfWeek} onChange={(e) => setFormData({ ...formData, timeSlots: formData.timeSlots.map((item, itemIndex) => itemIndex === index ? { ...item, dayOfWeek: e.target.value } : item) })}>
+                      {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => <option key={day}>{day}</option>)}
+                    </Form.Select>
+                    <Form.Control type="time" value={slot.startTime} onChange={(e) => setFormData({ ...formData, timeSlots: formData.timeSlots.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: e.target.value } : item) })} />
+                    <Form.Control type="time" value={slot.endTime} onChange={(e) => setFormData({ ...formData, timeSlots: formData.timeSlots.map((item, itemIndex) => itemIndex === index ? { ...item, endTime: e.target.value } : item) })} />
+                    <Button variant="outline-danger" onClick={() => setFormData({ ...formData, timeSlots: formData.timeSlots.filter((_, itemIndex) => itemIndex !== index) })}>Remove</Button>
+                  </div>
+                ))}
+                <Button variant="outline-secondary" size="sm" onClick={() => setFormData({ ...formData, timeSlots: [...formData.timeSlots, { dayOfWeek: 'Monday', startTime: '09:00', endTime: '10:00' }] })}>Add time slot</Button>
+              </Form.Group>
+            )}
             <Form.Group className="mb-3">
               <Form.Label>Task Code</Form.Label>
               <Form.Control
@@ -360,6 +398,7 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate 
         </Modal.Header>
         <Modal.Body>
           <Form>
+            {objectiveOverflow && <Alert variant="warning">Objective hours exceed this task's allocated {tasks.find(task => task.id === selectedTaskId)?.hoursRequired || 0} hours.</Alert>}
             <Form.Group className="mb-3">
               <Form.Label>Objective Code</Form.Label>
               <Form.Control
@@ -400,7 +439,7 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate 
         </Modal.Body>
         <Modal.Footer>
           <Button variant="secondary" onClick={() => setShowObjectiveModal(false)}>Cancel</Button>
-          <Button className="btn-stoic" onClick={handleAddObjective}>Add Objective</Button>
+          <Button className="btn-stoic" onClick={handleAddObjective} disabled={objectiveOverflow}>Add Objective</Button>
         </Modal.Footer>
       </Modal>
     </Container>

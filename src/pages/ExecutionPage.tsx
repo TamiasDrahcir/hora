@@ -14,16 +14,27 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
   onBlockCompletion,
   onNavigate,
 }) => {
+  const currentTime = useMemo(() => new Date().getTime(), []);
   const stats = useMemo(() => {
     if (!schedule) return null;
 
     const completedObjectiveHours = schedule.blocks
-      .filter(b => b.completed && b.blockType === 'anchor')
+      .filter(b => b.completed)
       .reduce((sum, b) => sum + b.durationMinutes, 0) / 60;
+    const totalScheduledHours = schedule.blocks.reduce((sum, b) => sum + b.durationMinutes, 0) / 60;
 
+    const now = new Date();
     const anchorMinutesPassed = schedule.blocks
       .filter(b => b.blockType === 'anchor')
-      .reduce((sum, b) => sum + (b.completed ? b.durationMinutes : 0), 0);
+      .filter(b => {
+        const dayIndex = DAYS_OF_WEEK.indexOf(b.dayOfWeek);
+        const blockDate = new Date(schedule.weekStartDate);
+        blockDate.setDate(blockDate.getDate() + dayIndex);
+        const [hours, minutes] = b.endTime.split(':').map(Number);
+        blockDate.setHours(hours, minutes, 0, 0);
+        return blockDate <= now;
+      })
+      .reduce((sum, b) => sum + b.durationMinutes, 0);
 
     const balance = calculateBalance(completedObjectiveHours, anchorMinutesPassed);
     const balanceHours = Math.floor(Math.abs(balance) / 60);
@@ -37,15 +48,16 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
       balanceMinutes,
       totalBlocks: schedule.blocks.length,
       completedBlocks: schedule.blocks.filter(b => b.completed).length,
+      totalScheduledHours,
     };
   }, [schedule]);
 
   const getPriorityColor = (priority: string): string => {
     const colors = {
-      earth: '#8b4513',
-      water: '#4169e1',
-      fire: '#ff6347',
-      air: '#daa520',
+      earth: '#7F5F00',
+      water: '#0E87CC',
+      fire: '#CF352E',
+      air: '#B38ED2',
     };
     return colors[priority as keyof typeof colors] || '#999';
   };
@@ -68,6 +80,15 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
     return acc;
   }, {} as Record<string, typeof schedule.blocks>);
 
+  const deadlineAlerts = schedule.blocks
+    .filter(block => !block.completed && block.objectiveCode)
+    .filter(block => {
+      const dayIndex = DAYS_OF_WEEK.indexOf(block.dayOfWeek);
+      const due = new Date(schedule.weekStartDate);
+      due.setDate(due.getDate() + Math.max(0, dayIndex));
+      return due.getTime() - currentTime < 48 * 60 * 60 * 1000;
+    });
+
   return (
     <Container className="fade-in">
       <h1 className="page-title">Execute Your Week</h1>
@@ -81,13 +102,13 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
                 <div
                   className="progress-bar"
                   style={{
-                    width: `${(stats.completedBlocks / stats.totalBlocks) * 100}%`,
+                    width: `${stats.totalScheduledHours ? (stats.completedObjectiveHours / stats.totalScheduledHours) * 100 : 0}%`,
                     backgroundColor: '#6b5344',
                   }}
                 ></div>
               </div>
               <p className="mb-0">
-                <strong>{stats.completedBlocks}</strong> of <strong>{stats.totalBlocks}</strong> objectives completed
+                <strong>{stats.completedObjectiveHours.toFixed(1)}h</strong> of <strong>{stats.totalScheduledHours.toFixed(1)}h</strong> scheduled hours completed
               </p>
             </Card.Body>
           </Card>
@@ -106,6 +127,17 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
           </Card>
         </Col>
       </Row>
+
+      <Card className="card-stoic p-3 mb-4">
+        <Card.Body>
+          <h6>Objectives nearing deadline</h6>
+          {deadlineAlerts.length > 0 ? deadlineAlerts.map(block => (
+            <Alert key={block.id} variant="warning" className="mb-2">
+              <strong>{block.objectiveCode}</strong> is scheduled for {block.dayOfWeek} at {block.startTime}.
+            </Alert>
+          )) : <p className="text-muted mb-0">No objectives are nearing their deadline.</p>}
+        </Card.Body>
+      </Card>
 
       <Row className="mb-4">
         <Col>

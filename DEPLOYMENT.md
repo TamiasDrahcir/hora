@@ -18,7 +18,7 @@ This guide walks you through deploying HORA to GitHub Pages so it's accessible a
 3. Add description: "Homework Optimizer & Resource Allocator"
 4. Choose visibility: Public (required for GitHub Pages)
 5. Click **"Create repository"**
-
+    
 ### Step 2: Add GitHub Remote and Push Code
 
 Open terminal/PowerShell in the `hora` directory and run:
