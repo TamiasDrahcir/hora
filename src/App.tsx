@@ -1,20 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Navbar, Button } from 'react-bootstrap';
-import type { AppState, Task, WeeklySchedule, LocalUser } from './types';
+import { Container, Navbar, Button, Modal } from 'react-bootstrap';
+import type { AppState, Task } from './types';
 import { getWeekStartDate } from './utils';
-import { getSessionUser, signOut } from './auth';
 import SetupPage from './pages/SetupPage';
 import SchedulePage from './pages/SchedulePage';
 import ExecutionPage from './pages/ExecutionPage';
 import ReportPage from './pages/ReportPage';
-import HelpPage from './pages/HelpPage';
-import LoginPage from './pages/LoginPage';
-import DevlogPage from './pages/DevlogPage';
 import './App.css';
 
 const App: React.FC = () => {
-  const [user, setUser] = useState<LocalUser | null>(() => getSessionUser());
-  const stateStorageKey = user ? `horaAppState:${user.id}` : '';
   const [theme, setTheme] = useState<'stoic' | 'tech'>('stoic');
   const [appState, setAppState] = useState<AppState>({
     tasks: [],
@@ -23,17 +17,12 @@ const App: React.FC = () => {
     currentView: 'setup',
     availableHoursPerDay: 4,
     currentWeekStartDate: getWeekStartDate(),
-    devlog: [
-      { id: 'devlog-auth', timestamp: '2026-09-03T00:00:00.000Z', message: 'Added local account creation, sign-in, password hashing, and session persistence.' },
-      { id: 'devlog-planner', timestamp: '2026-09-03T00:00:00.000Z', message: 'Updated weekly planning, calendar interactions, execution alerts, reports, and Help navigation.' },
-      { id: 'devlog-scope', timestamp: '2026-09-03T00:00:00.000Z', message: 'Clarified Devlog scope: it records major website changes made by the developer or coding agent, not user activity.' },
-    ],
   });
+  const [showHelp, setShowHelp] = useState(false);
 
   // Load data from localStorage on mount
   useEffect(() => {
-    if (!user) return;
-    const savedState = localStorage.getItem(stateStorageKey);
+    const savedState = localStorage.getItem('horaAppState');
     const savedTheme = localStorage.getItem('horaTheme') as 'stoic' | 'tech' | null;
     
     if (savedState) {
@@ -42,7 +31,6 @@ const App: React.FC = () => {
         setAppState(prev => ({
           ...prev,
           ...parsed,
-          devlog: parsed.devlog || prev.devlog,
           currentWeekStartDate: new Date(parsed.currentWeekStartDate),
         }));
       } catch (e) {
@@ -54,12 +42,12 @@ const App: React.FC = () => {
       setTheme(savedTheme);
       document.body.classList.toggle('tech-theme', savedTheme === 'tech');
     }
-  }, [stateStorageKey, user]);
+  }, []);
 
   // Save state to localStorage whenever it changes
   useEffect(() => {
-    if (user) localStorage.setItem(stateStorageKey, JSON.stringify(appState));
-  }, [appState, stateStorageKey, user]);
+    localStorage.setItem('horaAppState', JSON.stringify(appState));
+  }, [appState]);
 
   useEffect(() => {
     localStorage.setItem('horaTheme', theme);
@@ -78,24 +66,12 @@ const App: React.FC = () => {
     updateAppState({ tasks });
   };
 
-  const handleScheduleUpdate = (schedule: WeeklySchedule) => {
+  const handleScheduleUpdate = (schedule: any) => {
     updateAppState({ schedule });
   };
 
   const handleNavigate = (view: string) => {
     updateAppState({ currentView: view as any });
-  };
-
-  const handleAuthenticated = (authenticatedUser: LocalUser) => {
-    setAppState(prev => ({
-      ...prev,
-      tasks: [],
-      schedule: null,
-      report: null,
-      currentView: 'setup',
-      devlog: prev.devlog,
-    }));
-    setUser(authenticatedUser);
   };
 
   const handleBlockCompletion = (blockId: string, completed: boolean) => {
@@ -123,7 +99,6 @@ const App: React.FC = () => {
             tasks={appState.tasks}
             onTasksUpdate={handleTasksUpdate}
             onNavigate={handleNavigate}
-            currentWeekStartDate={appState.currentWeekStartDate}
           />
         );
       case 'schedule':
@@ -153,16 +128,10 @@ const App: React.FC = () => {
             onNavigate={handleNavigate}
           />
         );
-      case 'help':
-        return <HelpPage onNavigate={handleNavigate} />;
-      case 'devlog':
-        return <DevlogPage entries={appState.devlog} onNavigate={handleNavigate} />;
       default:
         return null;
     }
   };
-
-  if (!user) return <LoginPage onAuthenticated={handleAuthenticated} />;
 
   return (
     <div className={`container-app ${theme === 'tech' ? 'slide-in' : 'fade-in'}`}>
@@ -178,7 +147,7 @@ const App: React.FC = () => {
             <Button
               variant="outline-secondary"
               size="sm"
-              onClick={() => handleNavigate('help')}
+              onClick={() => setShowHelp(true)}
               className="btn-stoic"
             >
               Help
@@ -191,8 +160,6 @@ const App: React.FC = () => {
             >
               {theme === 'stoic' ? 'Tech' : 'Stoic'} Theme
             </Button>
-            <Button variant="outline-secondary" size="sm" className="btn-stoic" onClick={() => handleNavigate('devlog')}>Devlog</Button>
-            <Button variant="outline-secondary" size="sm" className="btn-stoic" onClick={() => { signOut(); setUser(null); }}>Sign out</Button>
           </div>
         </Container>
       </Navbar>
@@ -233,18 +200,45 @@ const App: React.FC = () => {
         >
           Report
         </Button>
-        <Button
-          variant={appState.currentView === 'devlog' ? 'dark' : 'outline-secondary'}
-          size="sm"
-          className="btn-stoic"
-          onClick={() => handleNavigate('devlog')}
-        >
-          Devlog
-        </Button>
       </div>
 
       {renderCurrentView()}
 
+      <Modal show={showHelp} onHide={() => setShowHelp(false)}>
+        <Modal.Header closeButton>
+          <Modal.Title>HORA - Homework Optimizer & Resource Allocator</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <h6>Getting Started</h6>
+          <ol>
+            <li><strong>Setup:</strong> Create your tasks with time estimates and break them into objectives</li>
+            <li><strong>Schedule:</strong> Let HORA allocate your tasks across the week, then adjust as needed</li>
+            <li><strong>Execute:</strong> Check off objectives as you complete them</li>
+            <li><strong>Report:</strong> View your weekly performance metrics and balance</li>
+          </ol>
+          
+          <h6 className="mt-3">Task Codes</h6>
+          <p>Format: <code>SECTION-TASK</code> (e.g., POLS206-PB10)</p>
+          <ul>
+            <li>Section: max 7 characters (course or project)</li>
+            <li>Task: max 4 characters (assignment or milestone)</li>
+            <li>Objectives: max 4 characters each (sub-tasks)</li>
+          </ul>
+
+          <h6 className="mt-3">Priorities</h6>
+          <ul>
+            <li><span className="priority-earth">Earth</span> - Rigid, important (lectures, mandatory events)</li>
+            <li><span className="priority-water">Water</span> - Flexible, important (homework, assignments)</li>
+            <li><span className="priority-fire">Fire</span> - Rigid, less important (passion projects)</li>
+            <li><span className="priority-air">Air</span> - Flexible, less important (entertainment)</li>
+          </ul>
+
+          <h6 className="mt-3">Balance</h6>
+          <p>Your temporal balance = objective hours completed - anchor hours passed</p>
+          <p><span className="balance-positive">Positive = Bounty (ahead of schedule)</span></p>
+          <p><span className="balance-negative">Negative = Debt (behind schedule)</span></p>
+        </Modal.Body>
+      </Modal>
     </div>
   );
 };

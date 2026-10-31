@@ -1,8 +1,7 @@
 import React, { useMemo } from 'react';
 import { Card, Button, Container, Row, Col, Table, Alert } from 'react-bootstrap';
 import type { WeeklySchedule } from '../types';
-import { calculateBalance, DAYS_OF_WEEK } from '../utils';
-import TimeGridCalendar from '../components/TimeGridCalendar';
+import { calculateBalance, DAYS_OF_WEEK, timeToMinutes, formatDurationHours } from '../utils';
 
 interface ExecutionPageProps {
   schedule: WeeklySchedule | null;
@@ -15,27 +14,16 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
   onBlockCompletion,
   onNavigate,
 }) => {
-  const currentTime = useMemo(() => new Date().getTime(), []);
   const stats = useMemo(() => {
     if (!schedule) return null;
 
     const completedObjectiveHours = schedule.blocks
-      .filter(b => b.completed)
+      .filter(b => b.completed && b.blockType === 'anchor')
       .reduce((sum, b) => sum + b.durationMinutes, 0) / 60;
-    const totalScheduledHours = schedule.blocks.reduce((sum, b) => sum + b.durationMinutes, 0) / 60;
 
-    const now = new Date();
     const anchorMinutesPassed = schedule.blocks
       .filter(b => b.blockType === 'anchor')
-      .filter(b => {
-        const dayIndex = DAYS_OF_WEEK.indexOf(b.dayOfWeek);
-        const blockDate = new Date(schedule.weekStartDate);
-        blockDate.setDate(blockDate.getDate() + dayIndex);
-        const [hours, minutes] = b.endTime.split(':').map(Number);
-        blockDate.setHours(hours, minutes, 0, 0);
-        return blockDate <= now;
-      })
-      .reduce((sum, b) => sum + b.durationMinutes, 0);
+      .reduce((sum, b) => sum + (b.completed ? b.durationMinutes : 0), 0);
 
     const balance = calculateBalance(completedObjectiveHours, anchorMinutesPassed);
     const balanceHours = Math.floor(Math.abs(balance) / 60);
@@ -49,9 +37,18 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
       balanceMinutes,
       totalBlocks: schedule.blocks.length,
       completedBlocks: schedule.blocks.filter(b => b.completed).length,
-      totalScheduledHours,
     };
   }, [schedule]);
+
+  const getPriorityColor = (priority: string): string => {
+    const colors = {
+      earth: '#8b4513',
+      water: '#4169e1',
+      fire: '#ff6347',
+      air: '#daa520',
+    };
+    return colors[priority as keyof typeof colors] || '#999';
+  };
 
   if (!schedule || !stats) {
     return (
@@ -64,14 +61,12 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
     );
   }
 
-  const deadlineAlerts = schedule.blocks
-    .filter(block => !block.completed && block.objectiveCode)
-    .filter(block => {
-      const dayIndex = DAYS_OF_WEEK.indexOf(block.dayOfWeek);
-      const due = new Date(schedule.weekStartDate);
-      due.setDate(due.getDate() + Math.max(0, dayIndex));
-      return due.getTime() - currentTime < 48 * 60 * 60 * 1000;
-    });
+  const blocksByDay = DAYS_OF_WEEK.slice(0, 5).reduce((acc, day) => {
+    acc[day] = schedule.blocks
+      .filter(b => b.dayOfWeek === day)
+      .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+    return acc;
+  }, {} as Record<string, typeof schedule.blocks>);
 
   return (
     <Container className="fade-in">
@@ -86,13 +81,13 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
                 <div
                   className="progress-bar"
                   style={{
-                    width: `${stats.totalScheduledHours ? (stats.completedObjectiveHours / stats.totalScheduledHours) * 100 : 0}%`,
+                    width: `${(stats.completedBlocks / stats.totalBlocks) * 100}%`,
                     backgroundColor: '#6b5344',
                   }}
                 ></div>
               </div>
               <p className="mb-0">
-                <strong>{stats.completedObjectiveHours.toFixed(1)}h</strong> of <strong>{stats.totalScheduledHours.toFixed(1)}h</strong> scheduled hours completed
+                <strong>{stats.completedBlocks}</strong> of <strong>{stats.totalBlocks}</strong> objectives completed
               </p>
             </Card.Body>
           </Card>
@@ -111,17 +106,6 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
           </Card>
         </Col>
       </Row>
-
-      <Card className="card-stoic p-3 mb-4">
-        <Card.Body>
-          <h6>Objectives nearing deadline</h6>
-          {deadlineAlerts.length > 0 ? deadlineAlerts.map(block => (
-            <Alert key={block.id} variant="warning" className="mb-2">
-              <strong>{block.objectiveCode}</strong> is scheduled for {block.dayOfWeek} at {block.startTime}.
-            </Alert>
-          )) : <p className="text-muted mb-0">No objectives are nearing their deadline.</p>}
-        </Card.Body>
-      </Card>
 
       <Row className="mb-4">
         <Col>
@@ -144,10 +128,66 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
         </Col>
       </Row>
 
-      <TimeGridCalendar
-        blocks={schedule.blocks.filter(block => DAYS_OF_WEEK.slice(0, 5).includes(block.dayOfWeek))}
-        onBlockCompletion={onBlockCompletion}
-      />
+      <div className="schedule-view">
+        {DAYS_OF_WEEK.slice(0, 5).map(day => (
+          <div key={day} className="mb-5">
+            <h5 style={{ borderBottom: '2px solid var(--stoic-border)', paddingBottom: '0.5rem' }}>
+              {day}
+            </h5>
+            {blocksByDay[day].length > 0 ? (
+              <div className="day-blocks">
+                {blocksByDay[day].map(block => (
+                  <Card
+                    key={block.id}
+                    className={`schedule-block ${block.completed ? 'completed' : ''}`}
+                    style={{
+                      borderLeftColor: getPriorityColor(block.priority),
+                      backgroundColor: block.completed ? '#f0f0f0' : 'white',
+                      opacity: block.completed ? 0.7 : 1,
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => onBlockCompletion(block.id, !block.completed)}
+                  >
+                    <Card.Body className="p-2">
+                      <div className="d-flex justify-content-between align-items-start">
+                        <div className="flex-grow-1">
+                          <div className="d-flex align-items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={block.completed}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                onBlockCompletion(block.id, e.target.checked);
+                              }}
+                            />
+                            <div>
+                              <h6 className="mb-1" style={{ textDecoration: block.completed ? 'line-through' : 'none' }}>
+                                {block.taskCode}
+                                {block.objectiveCode && <span className="ms-2 text-muted">{block.objectiveCode}</span>}
+                              </h6>
+                              <small className="text-muted">
+                                {block.startTime} - {block.endTime} ({formatDurationHours(block.durationMinutes)})
+                              </small>
+                              {block.isSporadic && <div className="badge bg-warning ms-2">Sporadic</div>}
+                            </div>
+                          </div>
+                          {block.description && (
+                            <small className="text-muted d-block mt-2">{block.description}</small>
+                          )}
+                        </div>
+                      </div>
+                    </Card.Body>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="text-muted p-3 border" style={{ borderColor: 'var(--stoic-border)' }}>
+                <small>No scheduled blocks for {day}</small>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
 
       <div className="mt-4 text-center">
         <Button

@@ -17,13 +17,6 @@ const DAY_END = 22 * 60;
 const SLOT_MINUTES = 15;
 const HOUR_HEIGHT = 64;
 
-const priorityColors: Record<string, string> = {
-  earth: '#7F5F00',
-  water: '#0E87CC',
-  fire: '#CF352E',
-  air: '#B38ED2',
-};
-
 function clampStart(start: number, duration: number): number {
   return Math.max(DAY_START, Math.min(start, DAY_END - duration));
 }
@@ -96,14 +89,14 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
                     const start = timeToMinutes(block.startTime);
                     const top = ((start - DAY_START) / 60) * HOUR_HEIGHT;
                     const height = Math.max((block.durationMinutes / 60) * HOUR_HEIGHT, 28);
-                    const color = priorityColors[block.priority] || '#666';
                     return (
                       <div
                         key={block.id}
                         draggable={editable}
                         onDragStart={editable ? event => event.dataTransfer.setData('blockId', block.id) : undefined}
                         className={`time-grid-block ${block.completed ? 'completed' : ''}`}
-                        style={{ top: `${top}px`, height: `${height}px`, backgroundColor: color }}
+                        style={{ top: `${top}px`, height: `${height}px` }}
+                        data-priority={block.priority}
                         onClick={onBlockCompletion ? () => onBlockCompletion(block.id, !block.completed) : undefined}
                       >
                         <div className="time-grid-block-heading">
@@ -140,7 +133,7 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
           <h5>Candidate lane</h5>
           <div className="candidate-blocks">
             {candidateBlocks.map(block => (
-              <div key={block.id} draggable className="candidate-block" style={{ backgroundColor: priorityColors[block.priority] || '#666' }} onDragStart={event => event.dataTransfer.setData('candidateId', block.id)}>
+              <div key={block.id} draggable className="candidate-block" data-priority={block.priority} onDragStart={event => event.dataTransfer.setData('candidateId', block.id)}>
                 <strong>{block.taskCode}</strong>
                 <small>{block.durationMinutes} min</small>
               </div>

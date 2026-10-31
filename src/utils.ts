@@ -22,6 +22,11 @@ export function priorityScore(priority: Priority): number {
   return scores[priority];
 }
 
+// Rigid tasks occur at fixed timeslots and don't consume available hours
+export function isRigid(priority: Priority): boolean {
+  return priority === 'earth' || priority === 'fire';
+}
+
 export function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(':').map(Number);
   return hours * 60 + minutes;
@@ -31,6 +36,36 @@ export function minutesToTime(minutes: number): string {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
   return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+}
+
+// Parse a military-style interval like "2230-2300" (or "900-1030") into HH:mm times
+export function parseMilitaryInterval(input: string): { startTime: string; endTime: string } | null {
+  const match = input.trim().match(/^(\d{3,4})\s*-\s*(\d{3,4})$/);
+  if (!match) return null;
+
+  const toTime = (raw: string): string | null => {
+    const padded = raw.padStart(4, '0');
+    const hours = parseInt(padded.slice(0, 2), 10);
+    const minutes = parseInt(padded.slice(2), 10);
+    if (hours > 23 || minutes > 59) return null;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  };
+
+  const startTime = toTime(match[1]);
+  const endTime = toTime(match[2]);
+  if (!startTime || !endTime) return null;
+  if (timeToMinutes(endTime) <= timeToMinutes(startTime)) return null;
+  return { startTime, endTime };
+}
+
+// Format HH:mm times as a military-style interval, e.g. "22:30"/"23:00" -> "2230-2300"
+export function formatMilitaryInterval(startTime: string, endTime: string): string {
+  return `${startTime.replace(':', '')}-${endTime.replace(':', '')}`;
+}
+
+// Format a block duration in minutes as hours, e.g. "0.83h"
+export function formatDurationHours(minutes: number): string {
+  return `${parseFloat((minutes / 60).toFixed(2))}h`;
 }
 
 export function calculateBalance(objectiveHoursFinished: number, anchorMinutesPassed: number): number {

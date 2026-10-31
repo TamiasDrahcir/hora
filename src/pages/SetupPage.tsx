@@ -1,17 +1,16 @@
 import React, { useState } from 'react';
-import { Card, Button, Form, Modal, Container, Row, Col, Table, Alert } from 'react-bootstrap';
+import { Card, Button, Form, Modal, Container, Row, Col, Table } from 'react-bootstrap';
 import { v4 as uuidv4 } from 'uuid';
-import type { Task, Objective, Priority } from '../types';
-import { generateTaskCode } from '../utils';
+import type { Task, Objective, Priority, TimeSlot } from '../types';
+import { generateTaskCode, isRigid, parseMilitaryInterval, formatMilitaryInterval } from '../utils';
 
 interface SetupPageProps {
   tasks: Task[];
   onTasksUpdate: (tasks: Task[]) => void;
   onNavigate: (view: string) => void;
-  currentWeekStartDate: Date;
 }
 
-const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate, currentWeekStartDate }) => {
+const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate }) => {
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [formData, setFormData] = useState({
@@ -22,8 +21,7 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate,
     deadline: 'Friday',
     priority: 'water' as Priority,
     description: '',
-    recurring: false,
-    timeSlots: [] as Array<{ dayOfWeek: string; startTime: string; endTime: string }>,
+    timeslots: [] as TimeSlot[],
   });
   const [objectiveForm, setObjectiveForm] = useState({
     code: '',
@@ -33,6 +31,8 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate,
   });
   const [showObjectiveModal, setShowObjectiveModal] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  // Raw military-style interval text per timeslot id, e.g. "2230-2300"
+  const [slotInputs, setSlotInputs] = useState<Record<string, string>>({});
 
   const handleOpenTaskModal = (task?: Task) => {
     if (task) {
@@ -43,12 +43,16 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate,
         taskCode: parts[1],
         taskName: task.name,
         hoursRequired: task.hoursRequired,
-        deadline: task.deadline,
+        deadline: task.deadline || 'Friday',
         priority: task.priority,
         description: task.description || '',
-        recurring: task.recurring || false,
-        timeSlots: task.timeSlots || [],
+        timeslots: task.timeslots || [],
       });
+      setSlotInputs(
+        Object.fromEntries(
+          (task.timeslots || []).map(s => [s.id, formatMilitaryInterval(s.startTime, s.endTime)])
+        )
+      );
     } else {
       setEditingTask(null);
       setFormData({
@@ -59,29 +63,29 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate,
         deadline: 'Friday',
         priority: 'water',
         description: '',
-        recurring: false,
-        timeSlots: [],
+        timeslots: [],
       });
+      setSlotInputs({});
     }
     setShowTaskModal(true);
   };
 
   const handleSaveTask = () => {
     const code = generateTaskCode(formData.section, formData.taskCode);
+    const rigid = isRigid(formData.priority);
     
     const newTask: Task = {
       id: editingTask?.id || uuidv4(),
       code,
       name: formData.taskName,
-      hoursRequired: formData.hoursRequired,
-      deadline: formData.deadline,
+      // Rigid tasks don't count towards available hours
+      hoursRequired: rigid ? 0 : formData.hoursRequired,
+      deadline: rigid ? '' : formData.deadline,
       priority: formData.priority,
-      mode: formData.priority === 'earth' || formData.priority === 'fire' ? 'rigid' : 'flexible',
       description: formData.description,
       objectives: editingTask?.objectives || [],
       completed: editingTask?.completed || false,
-      recurring: formData.recurring,
-      timeSlots: formData.timeSlots,
+      timeslots: rigid ? formData.timeslots : [],
     };
 
     if (editingTask) {
@@ -114,7 +118,7 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate,
     onTasksUpdate(
       tasks.map(t =>
         t.id === selectedTaskId
-          ? { ...t, objectives: [...t.objectives, objective] }
+          ? { ...t, objectives: [...t.objectives, objective], hoursRequired: t.hoursRequired + objectiveForm.hours }
           : t
       )
     );
@@ -127,9 +131,11 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate,
     onTasksUpdate(
       tasks.map(t => {
         if (t.id === taskId) {
+          const objective = t.objectives.find(o => o.id === objectiveId);
           return {
             ...t,
             objectives: t.objectives.filter(o => o.id !== objectiveId),
+            hoursRequired: Math.max(t.hoursRequired - (objective?.hoursRequired || 0), 0),
           };
         }
         return t;
@@ -137,17 +143,59 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate,
     );
   };
 
-  const totalHours = tasks.reduce((sum, t) => sum + t.hoursRequired, 0);
-  const objectiveHours = selectedTaskId
-    ? (tasks.find(task => task.id === selectedTaskId)?.objectives.reduce((sum, objective) => sum + objective.hoursRequired, 0) || 0)
-    : 0;
-  const objectiveOverflow = objectiveHours + objectiveForm.hours > (tasks.find(task => task.id === selectedTaskId)?.hoursRequired || 0);
-  const weekLabel = currentWeekStartDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+  const handleAddTimeslot = () => {
+    // Sticky timeslots: default new slot to the previous slot's interval
+    const last = formData.timeslots[formData.timeslots.length - 1];
+    const startTime = last?.startTime || '09:00';
+    const endTime = last?.endTime || '10:00';
+    const id = uuidv4();
+
+    setFormData({
+      ...formData,
+      timeslots: [
+        ...formData.timeslots,
+        { id, day: 'Monday', startTime, endTime },
+      ],
+    });
+    setSlotInputs({ ...slotInputs, [id]: formatMilitaryInterval(startTime, endTime) });
+  };
+
+  const handleUpdateTimeslot = (slotId: string, field: keyof TimeSlot, value: string) => {
+    setFormData({
+      ...formData,
+      timeslots: formData.timeslots.map(s => (s.id === slotId ? { ...s, [field]: value } : s)),
+    });
+  };
+
+  const handleSlotIntervalChange = (slotId: string, value: string) => {
+    setSlotInputs({ ...slotInputs, [slotId]: value });
+
+    const parsed = parseMilitaryInterval(value);
+    if (parsed) {
+      setFormData({
+        ...formData,
+        timeslots: formData.timeslots.map(s =>
+          s.id === slotId ? { ...s, startTime: parsed.startTime, endTime: parsed.endTime } : s
+        ),
+      });
+    }
+  };
+
+  const handleRemoveTimeslot = (slotId: string) => {
+    setFormData({
+      ...formData,
+      timeslots: formData.timeslots.filter(s => s.id !== slotId),
+    });
+    const { [slotId]: _removed, ...rest } = slotInputs;
+    setSlotInputs(rest);
+  };
+
+  // Rigid tasks don't count towards available hours
+  const totalHours = tasks.reduce((sum, t) => sum + (isRigid(t.priority) ? 0 : t.hoursRequired), 0);
 
   return (
     <Container className="fade-in">
       <h1 className="page-title">Setup Your Tasks</h1>
-      <p className="week-label">Planning week starting {weekLabel}</p>
       
       <Row className="mb-4">
         <Col>
@@ -185,18 +233,35 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate,
                 <Card.Body>
                   <Table striped size="sm" className="mb-3">
                     <tbody>
-                      <tr>
-                        <td><strong>Hours:</strong></td>
-                        <td>{task.hoursRequired} hr{task.hoursRequired !== 1 ? 's' : ''}</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Deadline:</strong></td>
-                        <td>{task.deadline}</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Objectives:</strong></td>
-                        <td>{task.objectives.length}</td>
-                      </tr>
+                      {isRigid(task.priority) ? (
+                        (task.timeslots && task.timeslots.length > 0) ? (
+                          task.timeslots.map(slot => (
+                            <tr key={slot.id}>
+                              <td><strong>{slot.day}</strong></td>
+                              <td>{slot.startTime} – {slot.endTime}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={2}><em>No timeslots set — edit to add.</em></td>
+                          </tr>
+                        )
+                      ) : (
+                        <>
+                          <tr>
+                            <td><strong>Hours:</strong></td>
+                            <td>{task.hoursRequired} hr{task.hoursRequired !== 1 ? 's' : ''}</td>
+                          </tr>
+                          <tr>
+                            <td><strong>Deadline:</strong></td>
+                            <td>{task.deadline}</td>
+                          </tr>
+                          <tr>
+                            <td><strong>Objectives:</strong></td>
+                            <td>{task.objectives.length}</td>
+                          </tr>
+                        </>
+                      )}
                     </tbody>
                   </Table>
                   {task.description && (
@@ -230,18 +295,19 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate,
                     </div>
                   )}
                   <div className="d-flex gap-2">
-                    <Button
-                      variant="outline-secondary"
-                      size="sm"
-                      className="btn-stoic"
-                      onClick={() => {
-                        setSelectedTaskId(task.id);
-                        setShowObjectiveModal(true);
-                      }}
-                      disabled={task.hoursRequired <= 1}
-                    >
-                      Add Objective
-                    </Button>
+                    {!isRigid(task.priority) && (
+                      <Button
+                        variant="outline-secondary"
+                        size="sm"
+                        className="btn-stoic"
+                        onClick={() => {
+                          setSelectedTaskId(task.id);
+                          setShowObjectiveModal(true);
+                        }}
+                      >
+                        Add Objective
+                      </Button>
+                    )}
                     <Button
                       variant="outline-secondary"
                       size="sm"
@@ -317,15 +383,6 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate,
               />
             </Form.Group>
             <Form.Group className="mb-3">
-              <Form.Label>Description (Optional)</Form.Label>
-              <Form.Control
-                as="textarea"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                rows={3}
-              />
-            </Form.Group>
-            <Form.Group className="mb-3">
               <Form.Label>Priority</Form.Label>
               <Form.Select
                 value={formData.priority}
@@ -337,20 +394,51 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate,
                 <option value="air">Air (Flexible & Less Important)</option>
               </Form.Select>
             </Form.Group>
-            {(formData.priority === 'earth' || formData.priority === 'fire') ? (
+            {isRigid(formData.priority) ? (
               <Form.Group className="mb-3">
-                <Form.Label>Required weekly time slots</Form.Label>
-                {formData.timeSlots.map((slot, index) => (
-                  <div className="time-slot-row" key={`${slot.dayOfWeek}-${index}`}>
-                    <Form.Select value={slot.dayOfWeek} onChange={(e) => setFormData({ ...formData, timeSlots: formData.timeSlots.map((item, itemIndex) => itemIndex === index ? { ...item, dayOfWeek: e.target.value } : item) })}>
-                      {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => <option key={day}>{day}</option>)}
+                <Form.Label>Timeslots</Form.Label>
+                {formData.timeslots.map(slot => (
+                  <div key={slot.id} className="d-flex gap-2 align-items-center mb-2">
+                    <Form.Select
+                      value={slot.day}
+                      onChange={(e) => handleUpdateTimeslot(slot.id, 'day', e.target.value)}
+                    >
+                      <option value="Monday">Monday</option>
+                      <option value="Tuesday">Tuesday</option>
+                      <option value="Wednesday">Wednesday</option>
+                      <option value="Thursday">Thursday</option>
+                      <option value="Friday">Friday</option>
+                      <option value="Saturday">Saturday</option>
+                      <option value="Sunday">Sunday</option>
                     </Form.Select>
-                    <Form.Control type="time" value={slot.startTime} onChange={(e) => setFormData({ ...formData, timeSlots: formData.timeSlots.map((item, itemIndex) => itemIndex === index ? { ...item, startTime: e.target.value } : item) })} />
-                    <Form.Control type="time" value={slot.endTime} onChange={(e) => setFormData({ ...formData, timeSlots: formData.timeSlots.map((item, itemIndex) => itemIndex === index ? { ...item, endTime: e.target.value } : item) })} />
-                    <Button variant="outline-danger" onClick={() => setFormData({ ...formData, timeSlots: formData.timeSlots.filter((_, itemIndex) => itemIndex !== index) })}>Remove</Button>
+                    <Form.Control
+                      type="text"
+                      placeholder="e.g., 2230-2300"
+                      value={slotInputs[slot.id] ?? formatMilitaryInterval(slot.startTime, slot.endTime)}
+                      isInvalid={
+                        parseMilitaryInterval(
+                          slotInputs[slot.id] ?? formatMilitaryInterval(slot.startTime, slot.endTime)
+                        ) === null
+                      }
+                      onChange={(e) => handleSlotIntervalChange(slot.id, e.target.value)}
+                    />
+                    <Button
+                      variant="outline-danger"
+                      size="sm"
+                      onClick={() => handleRemoveTimeslot(slot.id)}
+                    >
+                      ×
+                    </Button>
                   </div>
                 ))}
-                <Button variant="outline-secondary" size="sm" onClick={() => setFormData({ ...formData, timeSlots: [...formData.timeSlots, { dayOfWeek: 'Monday', startTime: '09:00', endTime: '10:00' }] })}>Add time slot</Button>
+                <Button
+                  variant="outline-secondary"
+                  size="sm"
+                  className="btn-stoic"
+                  onClick={handleAddTimeslot}
+                >
+                  Add Timeslot
+                </Button>
               </Form.Group>
             ) : (
               <>
@@ -379,13 +467,15 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate,
                 </Form.Group>
               </>
             )}
-            <Form.Check
-              className="mb-3"
-              type="switch"
-              label="Repeat this task in future weeks"
-              checked={formData.recurring}
-              onChange={(e) => setFormData({ ...formData, recurring: e.target.checked })}
-            />
+            <Form.Group className="mb-3">
+              <Form.Label>Description (Optional)</Form.Label>
+              <Form.Control
+                as="textarea"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                rows={3}
+              />
+            </Form.Group>
           </Form>
         </Modal.Body>
         <Modal.Footer>
@@ -401,7 +491,6 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate,
         </Modal.Header>
         <Modal.Body>
           <Form>
-            {objectiveOverflow && <Alert variant="warning">Objective hours exceed this task's allocated {tasks.find(task => task.id === selectedTaskId)?.hoursRequired || 0} hours.</Alert>}
             <Form.Group className="mb-3">
               <Form.Label>Objective Code</Form.Label>
               <Form.Control
@@ -442,7 +531,7 @@ const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate,
         </Modal.Body>
         <Modal.Footer>
           <Button variant="secondary" onClick={() => setShowObjectiveModal(false)}>Cancel</Button>
-          <Button className="btn-stoic" onClick={handleAddObjective} disabled={objectiveOverflow}>Add Objective</Button>
+          <Button className="btn-stoic" onClick={handleAddObjective}>Add Objective</Button>
         </Modal.Footer>
       </Modal>
     </Container>
