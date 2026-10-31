@@ -19,6 +19,8 @@ const App: React.FC = () => {
     currentWeekStartDate: getWeekStartDate(),
   });
   const [showHelp, setShowHelp] = useState(false);
+  // Guards against persisting the initial empty state before localStorage has been read
+  const [hydrated, setHydrated] = useState(false);
 
   // Load data from localStorage on mount
   useEffect(() => {
@@ -37,6 +39,7 @@ const App: React.FC = () => {
         console.error('Failed to load saved state', e);
       }
     }
+    setHydrated(true);
     
     if (savedTheme) {
       setTheme(savedTheme);
@@ -46,8 +49,9 @@ const App: React.FC = () => {
 
   // Save state to localStorage whenever it changes
   useEffect(() => {
+    if (!hydrated) return;
     localStorage.setItem('horaAppState', JSON.stringify(appState));
-  }, [appState]);
+  }, [appState, hydrated]);
 
   useEffect(() => {
     localStorage.setItem('horaTheme', theme);
@@ -68,6 +72,10 @@ const App: React.FC = () => {
 
   const handleScheduleUpdate = (schedule: any) => {
     updateAppState({ schedule });
+  };
+
+  const handleScriptChange = (scriptText: string) => {
+    updateAppState({ scriptText });
   };
 
   const handleNavigate = (view: string) => {
@@ -97,7 +105,11 @@ const App: React.FC = () => {
         return (
           <SetupPage
             tasks={appState.tasks}
+            scriptText={appState.scriptText || ''}
+            availableHoursPerDay={appState.availableHoursPerDay}
             onTasksUpdate={handleTasksUpdate}
+            onScriptChange={handleScriptChange}
+            onScheduleUpdate={handleScheduleUpdate}
             onNavigate={handleNavigate}
           />
         );
@@ -211,7 +223,7 @@ const App: React.FC = () => {
         <Modal.Body>
           <h6>Getting Started</h6>
           <ol>
-            <li><strong>Setup:</strong> Create your tasks with time estimates and break them into objectives</li>
+            <li><strong>Setup:</strong> Write your tasks in the task script, hit Compile, and review them on the calendar</li>
             <li><strong>Schedule:</strong> Let HORA allocate your tasks across the week, then adjust as needed</li>
             <li><strong>Execute:</strong> Check off objectives as you complete them</li>
             <li><strong>Report:</strong> View your weekly performance metrics and balance</li>

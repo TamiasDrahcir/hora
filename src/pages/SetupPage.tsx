@@ -1,539 +1,209 @@
-import React, { useState } from 'react';
-import { Card, Button, Form, Modal, Container, Row, Col, Table } from 'react-bootstrap';
-import { v4 as uuidv4 } from 'uuid';
-import type { Task, Objective, Priority, TimeSlot } from '../types';
-import { generateTaskCode, isRigid, parseMilitaryInterval, formatMilitaryInterval } from '../utils';
+import React, { useMemo, useState } from 'react';
+import { Card, Button, Form, Container, Row, Col } from 'react-bootstrap';
+import type { Task, ScheduleBlock, WeeklySchedule } from '../types';
+import { isRigid, timeToMinutes } from '../utils';
+import { parseTaskScript, tasksToScript, type ScriptError } from '../taskScript';
+import { scheduleWeek } from '../scheduler';
+import TimeGridCalendar from '../components/TimeGridCalendar';
 
 interface SetupPageProps {
   tasks: Task[];
+  scriptText: string;
+  availableHoursPerDay: number;
   onTasksUpdate: (tasks: Task[]) => void;
+  onScriptChange: (script: string) => void;
+  onScheduleUpdate: (schedule: WeeklySchedule) => void;
   onNavigate: (view: string) => void;
 }
 
-const SetupPage: React.FC<SetupPageProps> = ({ tasks, onTasksUpdate, onNavigate }) => {
-  const [showTaskModal, setShowTaskModal] = useState(false);
-  const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [formData, setFormData] = useState({
-    section: '',
-    taskCode: '',
-    taskName: '',
-    hoursRequired: 1,
-    deadline: 'Friday',
-    priority: 'water' as Priority,
-    description: '',
-    timeslots: [] as TimeSlot[],
-  });
-  const [objectiveForm, setObjectiveForm] = useState({
-    code: '',
-    name: '',
-    hours: 1,
-    description: '',
-  });
-  const [showObjectiveModal, setShowObjectiveModal] = useState(false);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  // Raw military-style interval text per timeslot id, e.g. "2230-2300"
-  const [slotInputs, setSlotInputs] = useState<Record<string, string>>({});
+const SCRIPT_PLACEHOLDER = `# One block per task. Example:
 
-  const handleOpenTaskModal = (task?: Task) => {
-    if (task) {
-      setEditingTask(task);
-      const parts = task.code.split('-');
-      setFormData({
-        section: parts[0],
-        taskCode: parts[1],
-        taskName: task.name,
-        hoursRequired: task.hoursRequired,
-        deadline: task.deadline || 'Friday',
-        priority: task.priority,
-        description: task.description || '',
-        timeslots: task.timeslots || [],
-      });
-      setSlotInputs(
-        Object.fromEntries(
-          (task.timeslots || []).map(s => [s.id, formatMilitaryInterval(s.startTime, s.endTime)])
-        )
-      );
-    } else {
-      setEditingTask(null);
-      setFormData({
-        section: '',
-        taskCode: '',
-        taskName: '',
-        hoursRequired: 1,
-        deadline: 'Friday',
-        priority: 'water',
-        description: '',
-        timeslots: [],
-      });
-      setSlotInputs({});
+Lecture (CSCE222-LEC) ! *
+{MWF}1020-1110
+
+Packback (POLS206-PB10) !
+REQ 3 BY F2359
+Read : 1
+Write : 1
+`;
+
+const SYNTAX_HELP = `TaskName (SECTION-CODE) [!] [* | YYMMDD]
+  !      important        *  recurring
+  YYMMDD recurring until date (e.g. 261231)
+
+Flexible task body:
+  REQ <hours> BY <day><time>   e.g. REQ 5 BY F2359 (BY optional)
+  <Subobjective> : <hours>     optional; defaults to 1h Subobj1..N
+                               unassigned hours become Buffer
+
+Rigid task body (fixed timeslots):
+  {<days>}<start>-<end>        e.g. {MWF}1020-1110
+
+Days: M T W R F S U (Mon..Sun)   Times: military (e.g. 2230)
+Lines starting with # are comments.`;
+
+const SetupPage: React.FC<SetupPageProps> = ({
+  tasks,
+  scriptText,
+  availableHoursPerDay,
+  onTasksUpdate,
+  onScriptChange,
+  onScheduleUpdate,
+  onNavigate,
+}) => {
+  const [errors, setErrors] = useState<ScriptError[]>([]);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [showSyntax, setShowSyntax] = useState(false);
+
+  // Prefill the editor from existing tasks when there is no saved script yet
+  const effectiveScript = scriptText || (tasks.length > 0 ? tasksToScript(tasks) : '');
+
+  const handleCompile = () => {
+    const result = parseTaskScript(effectiveScript, tasks);
+    setErrors(result.errors);
+
+    if (result.errors.length > 0) {
+      setSummary(null);
+      return;
     }
-    setShowTaskModal(true);
-  };
 
-  const handleSaveTask = () => {
-    const code = generateTaskCode(formData.section, formData.taskCode);
-    const rigid = isRigid(formData.priority);
-    
-    const newTask: Task = {
-      id: editingTask?.id || uuidv4(),
-      code,
-      name: formData.taskName,
-      // Rigid tasks don't count towards available hours
-      hoursRequired: rigid ? 0 : formData.hoursRequired,
-      deadline: rigid ? '' : formData.deadline,
-      priority: formData.priority,
-      description: formData.description,
-      objectives: editingTask?.objectives || [],
-      completed: editingTask?.completed || false,
-      timeslots: rigid ? formData.timeslots : [],
-    };
-
-    if (editingTask) {
-      onTasksUpdate(tasks.map(t => t.id === editingTask.id ? newTask : t));
-    } else {
-      onTasksUpdate([...tasks, newTask]);
-    }
-    setShowTaskModal(false);
-  };
-
-  const handleDeleteTask = (taskId: string) => {
-    onTasksUpdate(tasks.filter(t => t.id !== taskId));
-  };
-
-  const handleAddObjective = () => {
-    if (!selectedTaskId) return;
-    
-    const task = tasks.find(t => t.id === selectedTaskId);
-    if (!task) return;
-
-    const objective: Objective = {
-      id: uuidv4(),
-      code: `${task.code}-${objectiveForm.code}`,
-      name: objectiveForm.name,
-      hoursRequired: objectiveForm.hours,
-      description: objectiveForm.description,
-      completed: false,
-    };
-
-    onTasksUpdate(
-      tasks.map(t =>
-        t.id === selectedTaskId
-          ? { ...t, objectives: [...t.objectives, objective], hoursRequired: t.hoursRequired + objectiveForm.hours }
-          : t
-      )
-    );
-
-    setObjectiveForm({ code: '', name: '', hours: 1, description: '' });
-    setShowObjectiveModal(false);
-  };
-
-  const handleDeleteObjective = (taskId: string, objectiveId: string) => {
-    onTasksUpdate(
-      tasks.map(t => {
-        if (t.id === taskId) {
-          const objective = t.objectives.find(o => o.id === objectiveId);
-          return {
-            ...t,
-            objectives: t.objectives.filter(o => o.id !== objectiveId),
-            hoursRequired: Math.max(t.hoursRequired - (objective?.hoursRequired || 0), 0),
-          };
-        }
-        return t;
-      })
+    onTasksUpdate(result.tasks);
+    const rigidCount = result.tasks.filter(t => isRigid(t.priority)).length;
+    const flexible = result.tasks.filter(t => !isRigid(t.priority));
+    const flexibleHours = flexible.reduce((sum, t) => sum + t.hoursRequired, 0);
+    setSummary(
+      `Compiled ${result.tasks.length} task${result.tasks.length !== 1 ? 's' : ''}: ` +
+      `${rigidCount} rigid, ${flexible.length} flexible (${flexibleHours}h).`
     );
   };
 
-  const handleAddTimeslot = () => {
-    // Sticky timeslots: default new slot to the previous slot's interval
-    const last = formData.timeslots[formData.timeslots.length - 1];
-    const startTime = last?.startTime || '09:00';
-    const endTime = last?.endTime || '10:00';
-    const id = uuidv4();
-
-    setFormData({
-      ...formData,
-      timeslots: [
-        ...formData.timeslots,
-        { id, day: 'Monday', startTime, endTime },
-      ],
-    });
-    setSlotInputs({ ...slotInputs, [id]: formatMilitaryInterval(startTime, endTime) });
+  const handleGenerateSchedule = () => {
+    onScheduleUpdate(scheduleWeek(tasks, availableHoursPerDay * 5));
+    onNavigate('schedule');
   };
 
-  const handleUpdateTimeslot = (slotId: string, field: keyof TimeSlot, value: string) => {
-    setFormData({
-      ...formData,
-      timeslots: formData.timeslots.map(s => (s.id === slotId ? { ...s, [field]: value } : s)),
-    });
-  };
-
-  const handleSlotIntervalChange = (slotId: string, value: string) => {
-    setSlotInputs({ ...slotInputs, [slotId]: value });
-
-    const parsed = parseMilitaryInterval(value);
-    if (parsed) {
-      setFormData({
-        ...formData,
-        timeslots: formData.timeslots.map(s =>
-          s.id === slotId ? { ...s, startTime: parsed.startTime, endTime: parsed.endTime } : s
-        ),
+  // Rigid tasks render directly on the calendar at their timeslots
+  const rigidBlocks: ScheduleBlock[] = useMemo(() => {
+    const blocks: ScheduleBlock[] = [];
+    tasks.filter(t => isRigid(t.priority) && !t.completed).forEach(task => {
+      (task.timeslots || []).forEach(slot => {
+        blocks.push({
+          id: `preview-${task.id}-${slot.id}`,
+          taskId: task.id,
+          taskCode: task.code,
+          taskName: task.name,
+          priority: task.priority,
+          blockType: 'floater',
+          dayOfWeek: slot.day,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          durationMinutes: timeToMinutes(slot.endTime) - timeToMinutes(slot.startTime),
+          completed: false,
+          isSporadic: false,
+          description: task.description,
+        });
       });
-    }
-  };
-
-  const handleRemoveTimeslot = (slotId: string) => {
-    setFormData({
-      ...formData,
-      timeslots: formData.timeslots.filter(s => s.id !== slotId),
     });
-    const { [slotId]: _removed, ...rest } = slotInputs;
-    setSlotInputs(rest);
-  };
+    return blocks;
+  }, [tasks]);
 
-  // Rigid tasks don't count towards available hours
-  const totalHours = tasks.reduce((sum, t) => sum + (isRigid(t.priority) ? 0 : t.hoursRequired), 0);
+  // Flexible tasks wait in the candidate lane until the schedule is generated
+  const candidateBlocks: ScheduleBlock[] = useMemo(
+    () =>
+      tasks
+        .filter(t => !isRigid(t.priority) && !t.completed)
+        .map(task => ({
+          id: `candidate-${task.id}`,
+          taskId: task.id,
+          taskCode: task.code,
+          taskName: task.name,
+          priority: task.priority,
+          blockType: 'anchor' as const,
+          dayOfWeek: '',
+          startTime: '00:00',
+          endTime: '00:00',
+          durationMinutes: task.hoursRequired * 60,
+          completed: false,
+          isSporadic: false,
+          description: task.description,
+        })),
+    [tasks]
+  );
 
   return (
-    <Container className="fade-in">
+    <Container fluid className="fade-in">
       <h1 className="page-title">Setup Your Tasks</h1>
-      
-      <Row className="mb-4">
-        <Col>
-          <Card className="card-stoic p-3">
-            <Card.Body>
-              <p>Define all your tasks and objectives for the week.</p>
-              <div className="alert alert-info">
-                <strong>Total Hours:</strong> {totalHours} hours
-              </div>
-              <Button
-                className="btn-stoic"
-                onClick={() => handleOpenTaskModal()}
-              >
-                Add New Task
-              </Button>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
 
-      {tasks.length > 0 ? (
-        <Row>
-          {tasks.map(task => (
-            <Col key={task.id} md={6} className="mb-4">
-              <Card className="card-stoic">
-                <Card.Header style={{ borderBottom: '1px solid var(--stoic-border)' }}>
-                  <div className="d-flex justify-content-between align-items-center">
-                    <div>
-                      <h5 className="mb-0">{task.code}</h5>
-                      <small>{task.name}</small>
-                    </div>
-                    <span className={`priority-${task.priority}`}>{task.priority.toUpperCase()}</span>
-                  </div>
-                </Card.Header>
-                <Card.Body>
-                  <Table striped size="sm" className="mb-3">
-                    <tbody>
-                      {isRigid(task.priority) ? (
-                        (task.timeslots && task.timeslots.length > 0) ? (
-                          task.timeslots.map(slot => (
-                            <tr key={slot.id}>
-                              <td><strong>{slot.day}</strong></td>
-                              <td>{slot.startTime} – {slot.endTime}</td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={2}><em>No timeslots set — edit to add.</em></td>
-                          </tr>
-                        )
-                      ) : (
-                        <>
-                          <tr>
-                            <td><strong>Hours:</strong></td>
-                            <td>{task.hoursRequired} hr{task.hoursRequired !== 1 ? 's' : ''}</td>
-                          </tr>
-                          <tr>
-                            <td><strong>Deadline:</strong></td>
-                            <td>{task.deadline}</td>
-                          </tr>
-                          <tr>
-                            <td><strong>Objectives:</strong></td>
-                            <td>{task.objectives.length}</td>
-                          </tr>
-                        </>
-                      )}
-                    </tbody>
-                  </Table>
-                  {task.description && (
-                    <div className="mb-3">
-                      <small><strong>Description:</strong> {task.description}</small>
-                    </div>
-                  )}
-                  {task.objectives.length > 0 && (
-                    <div className="mb-3">
-                      <h6>Objectives:</h6>
-                      <Table striped size="sm" className="small">
-                        <tbody>
-                          {task.objectives.map(obj => (
-                            <tr key={obj.id}>
-                              <td>{obj.code}</td>
-                              <td>{obj.hoursRequired}h</td>
-                              <td>
-                                <Button
-                                  variant="link"
-                                  size="sm"
-                                  className="text-danger p-0"
-                                  onClick={() => handleDeleteObjective(task.id, obj.id)}
-                                >
-                                  Remove
-                                </Button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </Table>
-                    </div>
-                  )}
-                  <div className="d-flex gap-2">
-                    {!isRigid(task.priority) && (
-                      <Button
-                        variant="outline-secondary"
-                        size="sm"
-                        className="btn-stoic"
-                        onClick={() => {
-                          setSelectedTaskId(task.id);
-                          setShowObjectiveModal(true);
-                        }}
-                      >
-                        Add Objective
-                      </Button>
-                    )}
-                    <Button
-                      variant="outline-secondary"
-                      size="sm"
-                      className="btn-stoic"
-                      onClick={() => handleOpenTaskModal(task)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="outline-danger"
-                      size="sm"
-                      onClick={() => handleDeleteTask(task.id)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </Card.Body>
-              </Card>
-            </Col>
-          ))}
-        </Row>
-      ) : (
-        <Row>
-          <Col>
-            <Card className="card-stoic p-5 text-center">
-              <p>No tasks yet. Add your first task to get started!</p>
-            </Card>
-          </Col>
-        </Row>
-      )}
-
-      <div className="mt-4 text-center">
-        <Button
-          className="btn-stoic me-2"
-          onClick={() => onNavigate('schedule')}
-          disabled={tasks.length === 0}
-        >
-          Next: Schedule Tasks
-        </Button>
-      </div>
-
-      {/* Task Modal */}
-      <Modal show={showTaskModal} onHide={() => setShowTaskModal(false)}>
-        <Modal.Header closeButton>
-          <Modal.Title>{editingTask ? 'Edit Task' : 'Add New Task'}</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <Form>
-            <Form.Group className="mb-3">
-              <Form.Label>Section Code</Form.Label>
-              <Form.Control
-                value={formData.section}
-                onChange={(e) => setFormData({ ...formData, section: e.target.value })}
-                placeholder="e.g., POLS206 (max 7 chars)"
-                maxLength={7}
-              />
-            </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label>Task Code</Form.Label>
-              <Form.Control
-                value={formData.taskCode}
-                onChange={(e) => setFormData({ ...formData, taskCode: e.target.value })}
-                placeholder="e.g., PB10 (max 4 chars)"
-                maxLength={4}
-              />
-            </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label>Task Name</Form.Label>
-              <Form.Control
-                value={formData.taskName}
-                onChange={(e) => setFormData({ ...formData, taskName: e.target.value })}
-                placeholder="e.g., Packback #10"
-              />
-            </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label>Priority</Form.Label>
-              <Form.Select
-                value={formData.priority}
-                onChange={(e) => setFormData({ ...formData, priority: e.target.value as Priority })}
-              >
-                <option value="earth">Earth (Rigid & Important)</option>
-                <option value="water">Water (Flexible & Important)</option>
-                <option value="fire">Fire (Rigid & Less Important)</option>
-                <option value="air">Air (Flexible & Less Important)</option>
-              </Form.Select>
-            </Form.Group>
-            {isRigid(formData.priority) ? (
-              <Form.Group className="mb-3">
-                <Form.Label>Timeslots</Form.Label>
-                {formData.timeslots.map(slot => (
-                  <div key={slot.id} className="d-flex gap-2 align-items-center mb-2">
-                    <Form.Select
-                      value={slot.day}
-                      onChange={(e) => handleUpdateTimeslot(slot.id, 'day', e.target.value)}
-                    >
-                      <option value="Monday">Monday</option>
-                      <option value="Tuesday">Tuesday</option>
-                      <option value="Wednesday">Wednesday</option>
-                      <option value="Thursday">Thursday</option>
-                      <option value="Friday">Friday</option>
-                      <option value="Saturday">Saturday</option>
-                      <option value="Sunday">Sunday</option>
-                    </Form.Select>
-                    <Form.Control
-                      type="text"
-                      placeholder="e.g., 2230-2300"
-                      value={slotInputs[slot.id] ?? formatMilitaryInterval(slot.startTime, slot.endTime)}
-                      isInvalid={
-                        parseMilitaryInterval(
-                          slotInputs[slot.id] ?? formatMilitaryInterval(slot.startTime, slot.endTime)
-                        ) === null
-                      }
-                      onChange={(e) => handleSlotIntervalChange(slot.id, e.target.value)}
-                    />
-                    <Button
-                      variant="outline-danger"
-                      size="sm"
-                      onClick={() => handleRemoveTimeslot(slot.id)}
-                    >
-                      ×
-                    </Button>
-                  </div>
-                ))}
+      <Row>
+        <Col lg={5} className="mb-4">
+          <Card className="card-stoic script-editor-card">
+            <Card.Body className="d-flex flex-column">
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <h6 className="mb-0">Task Script</h6>
                 <Button
                   variant="outline-secondary"
                   size="sm"
                   className="btn-stoic"
-                  onClick={handleAddTimeslot}
+                  onClick={() => setShowSyntax(s => !s)}
                 >
-                  Add Timeslot
+                  {showSyntax ? 'Hide Syntax' : 'Syntax'}
                 </Button>
-              </Form.Group>
-            ) : (
-              <>
-                <Form.Group className="mb-3">
-                  <Form.Label>Hours Required</Form.Label>
-                  <Form.Control
-                    type="number"
-                    min={1}
-                    value={formData.hoursRequired}
-                    onChange={(e) => setFormData({ ...formData, hoursRequired: parseInt(e.target.value) || 1 })}
-                  />
-                </Form.Group>
-                <Form.Group className="mb-3">
-                  <Form.Label>Deadline</Form.Label>
-                  <Form.Select
-                    value={formData.deadline}
-                    onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
-                  >
-                    <option value="Monday">Monday</option>
-                    <option value="Tuesday">Tuesday</option>
-                    <option value="Wednesday">Wednesday</option>
-                    <option value="Thursday">Thursday</option>
-                    <option value="Friday">Friday</option>
-                    <option value="Weekend">Weekend</option>
-                  </Form.Select>
-                </Form.Group>
-              </>
-            )}
-            <Form.Group className="mb-3">
-              <Form.Label>Description (Optional)</Form.Label>
+              </div>
+              {showSyntax && <pre className="script-syntax-help">{SYNTAX_HELP}</pre>}
               <Form.Control
                 as="textarea"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                rows={3}
+                className="script-editor"
+                spellCheck={false}
+                value={effectiveScript}
+                placeholder={SCRIPT_PLACEHOLDER}
+                onChange={(e) => {
+                  onScriptChange(e.target.value);
+                  setSummary(null);
+                }}
               />
-            </Form.Group>
-          </Form>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowTaskModal(false)}>Cancel</Button>
-          <Button className="btn-stoic" onClick={handleSaveTask}>Save Task</Button>
-        </Modal.Footer>
-      </Modal>
+              {errors.length > 0 && (
+                <div className="script-errors mt-2">
+                  {errors.map((err, i) => (
+                    <div key={i}>
+                      {err.line > 0 ? `Line ${err.line}: ` : ''}{err.message}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {summary && <div className="script-summary mt-2">{summary}</div>}
+              <div className="d-flex justify-content-end mt-3">
+                <Button className="btn-stoic" onClick={handleCompile}>
+                  Compile
+                </Button>
+              </div>
+            </Card.Body>
+          </Card>
+        </Col>
 
-      {/* Objective Modal */}
-      <Modal show={showObjectiveModal} onHide={() => setShowObjectiveModal(false)}>
-        <Modal.Header closeButton>
-          <Modal.Title>Add Objective</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <Form>
-            <Form.Group className="mb-3">
-              <Form.Label>Objective Code</Form.Label>
-              <Form.Control
-                value={objectiveForm.code}
-                onChange={(e) => setObjectiveForm({ ...objectiveForm, code: e.target.value })}
-                placeholder="e.g., QX (max 4 chars)"
-                maxLength={4}
-              />
-              <small>Will be combined with task code</small>
-            </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label>Objective Name</Form.Label>
-              <Form.Control
-                value={objectiveForm.name}
-                onChange={(e) => setObjectiveForm({ ...objectiveForm, name: e.target.value })}
-                placeholder="e.g., Question"
-              />
-            </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label>Hours Required</Form.Label>
-              <Form.Control
-                type="number"
-                min={1}
-                value={objectiveForm.hours}
-                onChange={(e) => setObjectiveForm({ ...objectiveForm, hours: parseInt(e.target.value) || 1 })}
-              />
-            </Form.Group>
-            <Form.Group className="mb-3">
-              <Form.Label>Description (Optional)</Form.Label>
-              <Form.Control
-                as="textarea"
-                value={objectiveForm.description}
-                onChange={(e) => setObjectiveForm({ ...objectiveForm, description: e.target.value })}
-                rows={2}
-              />
-            </Form.Group>
-          </Form>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowObjectiveModal(false)}>Cancel</Button>
-          <Button className="btn-stoic" onClick={handleAddObjective}>Add Objective</Button>
-        </Modal.Footer>
-      </Modal>
+        <Col lg={7} className="mb-4">
+          <Card className="card-stoic">
+            <Card.Body className="d-flex flex-column">
+              <h6 className="mb-2">Weekly Calendar</h6>
+              <div className="calendar-with-lane">
+                <TimeGridCalendar
+                  blocks={rigidBlocks}
+                  candidateBlocks={candidateBlocks}
+                  showCandidateLane
+                />
+              </div>
+              <div className="d-flex justify-content-end mt-3">
+                <Button
+                  className="btn-stoic"
+                  onClick={handleGenerateSchedule}
+                  disabled={tasks.length === 0}
+                >
+                  Generate Schedule
+                </Button>
+              </div>
+            </Card.Body>
+          </Card>
+        </Col>
+      </Row>
     </Container>
   );
 };

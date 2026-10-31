@@ -32,6 +32,8 @@ export interface Task {
   priority: Priority;
   completed: boolean;
   timeslots?: TimeSlot[]; // fixed occurrences for rigid (earth/fire) tasks
+  recurring?: boolean;
+  recurrenceEnd?: string; // ISO date when recurrence stops
 }
 
 export interface ScheduleBlock {
@@ -90,4 +92,5 @@ export interface AppState {
   currentView: 'setup' | 'schedule' | 'execution' | 'report' | 'adjustments';
   availableHoursPerDay: number;
   currentWeekStartDate: Date;
+  scriptText?: string; // task script source in the setup editor
 }

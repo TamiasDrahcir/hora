@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import type { ScheduleBlock } from '../types';
-import { DAYS_OF_WEEK, minutesToTime, timeToMinutes } from '../utils';
+import { DAYS_OF_WEEK, minutesToTime, timeToMinutes, formatDurationHours } from '../utils';
 
 interface TimeGridCalendarProps {
   blocks: ScheduleBlock[];
@@ -133,12 +133,12 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
           <h5>Candidate lane</h5>
           <div className="candidate-blocks">
             {candidateBlocks.map(block => (
-              <div key={block.id} draggable className="candidate-block" data-priority={block.priority} onDragStart={event => event.dataTransfer.setData('candidateId', block.id)}>
+              <div key={block.id} draggable={editable} className="candidate-block" data-priority={block.priority} onDragStart={editable ? event => event.dataTransfer.setData('candidateId', block.id) : undefined}>
                 <strong>{block.taskCode}</strong>
-                <small>{block.durationMinutes} min</small>
+                <small>{formatDurationHours(block.durationMinutes)}</small>
               </div>
             ))}
-            {candidateBlocks.length === 0 && <small className="text-muted">Removed blocks stay here until you place them again.</small>}
+            {candidateBlocks.length === 0 && <small className="text-muted">Flexible tasks appear here until scheduled.</small>}
           </div>
         </section>
       )}
