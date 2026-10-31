@@ -53,9 +53,9 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
   if (!schedule || !stats) {
     return (
       <Container className="fade-in">
-        <Alert variant="warning">No schedule available. Please create a schedule first.</Alert>
-        <Button className="btn-stoic" onClick={() => onNavigate('schedule')}>
-          Create Schedule
+        <Alert variant="warning">No schedule available. Generate a schedule from Setup first.</Alert>
+        <Button className="btn-stoic" onClick={() => onNavigate('setup')}>
+          Go to Setup
         </Button>
       </Container>
     );
@@ -192,9 +192,9 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
       <div className="mt-4 text-center">
         <Button
           className="btn-stoic me-2"
-          onClick={() => onNavigate('schedule')}
+          onClick={() => onNavigate('setup')}
         >
-          Back to Schedule
+          Back to Setup
         </Button>
         <Button
           className="btn-stoic"

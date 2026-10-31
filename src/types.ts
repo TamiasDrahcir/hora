@@ -90,7 +90,7 @@ export interface AppState {
   tasks: Task[];
   schedule: WeeklySchedule | null;
   report: WeeklyReport | null;
-  currentView: 'setup' | 'schedule' | 'execution' | 'report' | 'adjustments';
+  currentView: 'setup' | 'execution' | 'report' | 'adjustments';
   availableHoursPerDay: number;
   currentWeekStartDate: Date;
   scriptText?: string; // task script source in the setup editor

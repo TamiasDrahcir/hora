@@ -3,7 +3,6 @@ import { Container, Navbar, Button, Modal } from 'react-bootstrap';
 import type { AppState, Task } from './types';
 import { getWeekStartDate } from './utils';
 import SetupPage from './pages/SetupPage';
-import SchedulePage from './pages/SchedulePage';
 import ExecutionPage from './pages/ExecutionPage';
 import ReportPage from './pages/ReportPage';
 import './App.css';
@@ -33,6 +32,8 @@ const App: React.FC = () => {
         setAppState(prev => ({
           ...prev,
           ...parsed,
+          // The Schedule view no longer exists; older saved state may still point at it
+          currentView: parsed.currentView === 'schedule' ? 'setup' : parsed.currentView,
           currentWeekStartDate: new Date(parsed.currentWeekStartDate),
         }));
       } catch (e) {
@@ -106,22 +107,11 @@ const App: React.FC = () => {
           <SetupPage
             tasks={appState.tasks}
             scriptText={appState.scriptText || ''}
+            schedule={appState.schedule}
             availableHoursPerDay={appState.availableHoursPerDay}
             onTasksUpdate={handleTasksUpdate}
             onScriptChange={handleScriptChange}
             onScheduleUpdate={handleScheduleUpdate}
-            onNavigate={handleNavigate}
-          />
-        );
-      case 'schedule':
-        return (
-          <SchedulePage
-            tasks={appState.tasks}
-            schedule={appState.schedule}
-            availableHoursPerDay={appState.availableHoursPerDay}
-            onScheduleUpdate={handleScheduleUpdate}
-            onNavigate={handleNavigate}
-            onTasksUpdate={handleTasksUpdate}
           />
         );
       case 'execution':
@@ -186,15 +176,6 @@ const App: React.FC = () => {
           Setup
         </Button>
         <Button
-          variant={appState.currentView === 'schedule' ? 'dark' : 'outline-secondary'}
-          size="sm"
-          className="me-2 btn-stoic"
-          onClick={() => handleNavigate('schedule')}
-          disabled={appState.tasks.length === 0}
-        >
-          Schedule
-        </Button>
-        <Button
           variant={appState.currentView === 'execution' ? 'dark' : 'outline-secondary'}
           size="sm"
           className="me-2 btn-stoic"
@@ -223,8 +204,7 @@ const App: React.FC = () => {
         <Modal.Body>
           <h6>Getting Started</h6>
           <ol>
-            <li><strong>Setup:</strong> Write your tasks in the task script, hit Compile, and review them on the calendar</li>
-            <li><strong>Schedule:</strong> Let HORA allocate your tasks across the week, then adjust as needed</li>
+            <li><strong>Setup:</strong> Write your tasks in the task script, hit Compile, then Generate Schedule to see proposed times for each subobjective on the calendar</li>
             <li><strong>Execute:</strong> Check off objectives as you complete them</li>
             <li><strong>Report:</strong> View your weekly performance metrics and balance</li>
           </ol>

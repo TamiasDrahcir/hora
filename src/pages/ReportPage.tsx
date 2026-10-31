@@ -93,11 +93,11 @@ const ReportPage: React.FC<ReportPageProps> = ({ schedule, tasks, onNavigate }) 
       <Container className="fade-in">
         <h1 className="page-title">Weekly Report</h1>
         <Card className="card-stoic p-5 text-center">
-          <p>No schedule available. Please create and execute a schedule first.</p>
+          <p>No schedule available. Generate a schedule from Setup first.</p>
         </Card>
         <div className="mt-4 text-center">
-          <Button className="btn-stoic" onClick={() => onNavigate('schedule')}>
-            Create Schedule
+          <Button className="btn-stoic" onClick={() => onNavigate('setup')}>
+            Go to Setup
           </Button>
         </div>
       </Container>

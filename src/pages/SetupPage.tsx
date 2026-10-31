@@ -9,11 +9,11 @@ import TimeGridCalendar from '../components/TimeGridCalendar';
 interface SetupPageProps {
   tasks: Task[];
   scriptText: string;
+  schedule: WeeklySchedule | null;
   availableHoursPerDay: number;
   onTasksUpdate: (tasks: Task[]) => void;
   onScriptChange: (script: string) => void;
-  onScheduleUpdate: (schedule: WeeklySchedule) => void;
-  onNavigate: (view: string) => void;
+  onScheduleUpdate: (schedule: WeeklySchedule | null) => void;
 }
 
 const SCRIPT_PLACEHOLDER = `# One block per task. Example:
@@ -45,11 +45,11 @@ Lines starting with # are comments.`;
 const SetupPage: React.FC<SetupPageProps> = ({
   tasks,
   scriptText,
+  schedule,
   availableHoursPerDay,
   onTasksUpdate,
   onScriptChange,
   onScheduleUpdate,
-  onNavigate,
 }) => {
   const [errors, setErrors] = useState<ScriptError[]>([]);
   const [summary, setSummary] = useState<string | null>(null);
@@ -68,6 +68,8 @@ const SetupPage: React.FC<SetupPageProps> = ({
     }
 
     onTasksUpdate(result.tasks);
+    // The previous schedule no longer matches the compiled tasks
+    onScheduleUpdate(null);
     const rigidCount = result.tasks.filter(t => isRigid(t.priority)).length;
     const flexible = result.tasks.filter(t => !isRigid(t.priority));
     const flexibleHours = flexible.reduce((sum, t) => sum + t.hoursRequired, 0);
@@ -79,10 +81,9 @@ const SetupPage: React.FC<SetupPageProps> = ({
 
   const handleGenerateSchedule = () => {
     onScheduleUpdate(scheduleWeek(tasks, availableHoursPerDay * 5));
-    onNavigate('schedule');
   };
 
-  // Rigid tasks render directly on the calendar at their timeslots
+  // Before generating, only rigid timeslots are on the calendar; afterwards it shows the proposed schedule
   const rigidBlocks: ScheduleBlock[] = useMemo(() => {
     const blocks: ScheduleBlock[] = [];
     tasks.filter(t => isRigid(t.priority) && !t.completed).forEach(task => {
@@ -107,34 +108,53 @@ const SetupPage: React.FC<SetupPageProps> = ({
     return blocks;
   }, [tasks]);
 
-  // Flexible tasks wait in the candidate lane until the schedule is generated
-  const candidateBlocks: ScheduleBlock[] = useMemo(
-    () =>
-      tasks
-        .filter(t => !isRigid(t.priority) && !t.completed)
-        .map(task => ({
-          id: `candidate-${task.id}`,
-          taskId: task.id,
-          taskCode: task.code,
-          taskName: task.name,
-          priority: task.priority,
-          blockType: 'anchor' as const,
-          dayOfWeek: '',
-          startTime: '00:00',
-          endTime: '00:00',
-          durationMinutes: task.hoursRequired * 60,
-          completed: false,
-          isSporadic: false,
-          description: task.description,
-          subItems: task.objectives.map(obj => ({
-            id: obj.id,
-            label: obj.name,
-            hours: obj.hoursRequired,
-            isBuffer: obj.name === 'Buffer',
-          })),
-        })),
-    [tasks]
-  );
+  // Flexible work waits in the candidate lane; once a schedule exists, only what couldn't be placed remains
+  const candidateBlocks: ScheduleBlock[] = useMemo(() => {
+    const placedObjectiveIds = new Set(
+      (schedule?.blocks || []).filter(b => b.blockType === 'anchor' && b.objectiveId).map(b => b.objectiveId)
+    );
+    const placedTaskIds = new Set(
+      (schedule?.blocks || []).filter(b => b.blockType === 'anchor' && !b.objectiveId).map(b => b.taskId)
+    );
+
+    const result: ScheduleBlock[] = [];
+    tasks.filter(t => !isRigid(t.priority) && !t.completed).forEach(task => {
+      let subItems = task.objectives.map(obj => ({
+        id: obj.id,
+        label: obj.name,
+        hours: obj.hoursRequired,
+        isBuffer: obj.name === 'Buffer',
+      }));
+
+      if (schedule) {
+        // Buffer is never scheduled, so it doesn't count as unplaced
+        subItems = subItems.filter(item => !item.isBuffer && !placedObjectiveIds.has(item.id));
+        if (task.objectives.length === 0 ? placedTaskIds.has(task.id) : subItems.length === 0) return;
+      }
+
+      const hours = task.objectives.length === 0
+        ? task.hoursRequired
+        : subItems.reduce((sum, item) => sum + item.hours, 0);
+
+      result.push({
+        id: `candidate-${task.id}`,
+        taskId: task.id,
+        taskCode: task.code,
+        taskName: task.name,
+        priority: task.priority,
+        blockType: 'anchor',
+        dayOfWeek: '',
+        startTime: '00:00',
+        endTime: '00:00',
+        durationMinutes: hours * 60,
+        completed: false,
+        isSporadic: false,
+        description: task.description,
+        subItems,
+      });
+    });
+    return result;
+  }, [tasks, schedule]);
 
   return (
     <Container fluid className="fade-in">
@@ -192,7 +212,7 @@ const SetupPage: React.FC<SetupPageProps> = ({
               <h6 className="mb-2">Weekly Calendar</h6>
               <div className="calendar-with-lane">
                 <TimeGridCalendar
-                  blocks={rigidBlocks}
+                  blocks={schedule ? schedule.blocks : rigidBlocks}
                   candidateBlocks={candidateBlocks}
                   showCandidateLane
                 />

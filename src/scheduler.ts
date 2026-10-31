@@ -1,13 +1,16 @@
 // HORA Scheduling Algorithm
 
 import type { Task, ScheduleBlock, WeeklySchedule, Objective } from './types';
-import { 
-  sortTasksForScheduling, 
-  findGapsInDay, 
-  timeToMinutes, 
+import {
+  sortTasksForScheduling,
+  findGapsInDay,
+  timeToMinutes,
   minutesToTime,
-  isRigid
+  isRigid,
+  DAYS_OF_WEEK
 } from './utils';
+
+const SCHEDULING_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
 export class HORAScheduler {
   private tasks: Task[];
@@ -48,16 +51,7 @@ export class HORAScheduler {
         const durationMinutes = timeToMinutes(slot.endTime) - timeToMinutes(slot.startTime);
         if (durationMinutes <= 0) continue;
 
-        this.addBlock(
-          task,
-          undefined,
-          slot.day,
-          slot.startTime,
-          slot.endTime,
-          durationMinutes,
-          false,
-          'floater'
-        );
+        this.addBlock(task, undefined, slot.day, slot.startTime, slot.endTime, durationMinutes, 'floater');
       }
     }
   }
@@ -66,78 +60,58 @@ export class HORAScheduler {
     const sortedTasks = sortTasksForScheduling(
       this.tasks.filter(t => !t.completed && !isRigid(t.priority))
     );
-    const daysAvailable = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-    
+
     for (const task of sortedTasks) {
-      let remainingHours = task.hoursRequired;
-      
-      // Try to fit entire task as continuous block
-      const placed = this.placeTaskContinuous(task, daysAvailable, remainingHours);
-      if (placed) continue;
-      
-      // Otherwise, place with gaps
-      this.placeTaskWithGaps(task, daysAvailable, remainingHours);
+      const { days, lastDayLimit } = this.getDeadlineWindow(task);
+
+      // A task is represented by its subobjectives; only a task without any is placed as a whole.
+      // Buffer is unscheduled slack, so it is never placed.
+      const placeable = task.objectives.filter(o => o.name !== 'Buffer' && !o.completed);
+      const items: Array<Objective | undefined> = task.objectives.length === 0 ? [undefined] : placeable;
+
+      for (const objective of items) {
+        const hours = objective ? objective.hoursRequired : task.hoursRequired;
+        // Anything that doesn't fit before the deadline stays unplaced (in the candidate lane)
+        this.placeContinuous(task, objective, days, lastDayLimit, hours * 60);
+      }
     }
   }
 
-  private placeTaskContinuous(task: Task, days: string[], hours: number): boolean {
-    const requiredMinutes = hours * 60;
-    
+  // Days a task may be scheduled on, and how late it may run on the deadline day
+  private getDeadlineWindow(task: Task): { days: string[]; lastDayLimit: number } {
+    const [deadlineDay, deadlineTime] = (task.deadline || '').split(' ');
+    const deadlineIndex = DAYS_OF_WEEK.indexOf(deadlineDay);
+    const lastDay = deadlineIndex >= 0 ? Math.min(deadlineIndex, SCHEDULING_DAYS.length - 1) : SCHEDULING_DAYS.length - 1;
+    const days = SCHEDULING_DAYS.slice(0, lastDay + 1);
+
+    // Deadlines after Friday still allow all of Monday-Friday up to the end of the day
+    const deadlineOnSchedulingDay = deadlineIndex >= 0 && deadlineIndex <= SCHEDULING_DAYS.length - 1;
+    const lastDayLimit = deadlineOnSchedulingDay && deadlineTime ? timeToMinutes(deadlineTime) : 24 * 60;
+    return { days, lastDayLimit };
+  }
+
+  private placeContinuous(
+    task: Task,
+    objective: Objective | undefined,
+    days: string[],
+    lastDayLimit: number,
+    requiredMinutes: number
+  ): boolean {
     for (const day of days) {
-      const gaps = findGapsInDay(this.blocks, day);
-      
-      for (const gap of gaps) {
-        if (gap.durationMinutes >= requiredMinutes) {
-          const startTime = gap.start;
-          const endMinutes = timeToMinutes(gap.start) + requiredMinutes;
-          const endTime = minutesToTime(endMinutes);
-          
-          this.addBlock(
-            task,
-            undefined,
-            day,
-            startTime,
-            endTime,
-            requiredMinutes,
-            false
-          );
+      const limit = day === days[days.length - 1] ? lastDayLimit : 24 * 60;
+
+      for (const gap of findGapsInDay(this.blocks, day)) {
+        const start = timeToMinutes(gap.start);
+        const end = Math.min(timeToMinutes(gap.end), limit);
+
+        if (end - start >= requiredMinutes) {
+          this.addBlock(task, objective, day, minutesToTime(start), minutesToTime(start + requiredMinutes), requiredMinutes);
           return true;
         }
       }
     }
-    
-    return false;
-  }
 
-  private placeTaskWithGaps(task: Task, days: string[], hours: number): void {
-    let remainingMinutes = hours * 60;
-    
-    for (const day of days) {
-      if (remainingMinutes <= 0) break;
-      
-      const gaps = findGapsInDay(this.blocks, day);
-      
-      for (const gap of gaps) {
-        if (remainingMinutes <= 0) break;
-        
-        const minutesToPlace = Math.min(gap.durationMinutes, remainingMinutes);
-        const startTime = gap.start;
-        const endMinutes = timeToMinutes(gap.start) + minutesToPlace;
-        const endTime = minutesToTime(endMinutes);
-        
-        this.addBlock(
-          task,
-          undefined,
-          day,
-          startTime,
-          endTime,
-          minutesToPlace,
-          remainingMinutes > gap.durationMinutes
-        );
-        
-        remainingMinutes -= minutesToPlace;
-      }
-    }
+    return false;
   }
 
   private addBlock(
@@ -147,7 +121,6 @@ export class HORAScheduler {
     startTime: string,
     endTime: string,
     durationMinutes: number,
-    isSporadic: boolean,
     blockType: 'floater' | 'anchor' = 'anchor'
   ): void {
     const block: ScheduleBlock = {
@@ -165,10 +138,10 @@ export class HORAScheduler {
       endTime,
       durationMinutes,
       completed: false,
-      isSporadic,
+      isSporadic: false,
       description: objective?.description || task.description,
     };
-    
+
     this.blocks.push(block);
   }
 
