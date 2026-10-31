@@ -134,8 +134,24 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
           <div className="candidate-blocks">
             {candidateBlocks.map(block => (
               <div key={block.id} draggable={editable} className="candidate-block" data-priority={block.priority} onDragStart={editable ? event => event.dataTransfer.setData('candidateId', block.id) : undefined}>
-                <strong>{block.taskCode}</strong>
-                <small>{formatDurationHours(block.durationMinutes)}</small>
+                <div className="candidate-block-header">
+                  <strong>{block.taskCode}</strong>
+                  <small>{formatDurationHours(block.durationMinutes)}</small>
+                </div>
+                {block.subItems && block.subItems.length > 0 && (
+                  <div className="candidate-sub-blocks">
+                    {block.subItems.map(sub => (
+                      <div
+                        key={sub.id}
+                        className={`candidate-sub-block ${sub.isBuffer ? 'buffer' : ''}`}
+                        style={{ minHeight: `${Math.max(sub.hours * 28, 24)}px` }}
+                      >
+                        <span>{sub.label}</span>
+                        <span>{parseFloat(sub.hours.toFixed(2))}h</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
             {candidateBlocks.length === 0 && <small className="text-muted">Flexible tasks appear here until scheduled.</small>}

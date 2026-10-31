@@ -54,6 +54,7 @@ export interface ScheduleBlock {
   completedAt?: Date;
   isSporadic: boolean;
   description?: string;
+  subItems?: Array<{ id: string; label: string; hours: number; isBuffer?: boolean }>; // subobjectives shown inside a candidate block
 }
 
 export interface WeeklySchedule {

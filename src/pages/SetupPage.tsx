@@ -126,6 +126,12 @@ const SetupPage: React.FC<SetupPageProps> = ({
           completed: false,
           isSporadic: false,
           description: task.description,
+          subItems: task.objectives.map(obj => ({
+            id: obj.id,
+            label: obj.name,
+            hours: obj.hoursRequired,
+            isBuffer: obj.name === 'Buffer',
+          })),
         })),
     [tasks]
   );

@@ -447,3 +447,38 @@ body.tech-theme .modal-content {
     max-height: 200px;
   }
 }
+
+/* Candidate block: big block enclosing one small block per subobjective */
+.candidate-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.candidate-sub-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 0.35rem;
+}
+
+.candidate-sub-block {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.65rem;
+  border-radius: 3px;
+  background-color: rgba(107, 83, 68, 0.14);
+  border: 1px solid rgba(107, 83, 68, 0.35);
+}
+
+.candidate-block[data-priority='water'] .candidate-sub-block { background-color: rgba(65, 105, 225, 0.15); border-color: rgba(65, 105, 225, 0.45); }
+.candidate-block[data-priority='air'] .candidate-sub-block { background-color: rgba(184, 134, 11, 0.15); border-color: rgba(184, 134, 11, 0.45); }
+
+.candidate-sub-block.buffer {
+  background-color: transparent !important;
+  border-style: dashed;
+  font-style: italic;
+  opacity: 0.8;
+}
