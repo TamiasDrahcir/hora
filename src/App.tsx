@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Container, Navbar, Button, Modal } from 'react-bootstrap';
 import type { AppState, Task } from './types';
 import { getWeekStartDate } from './utils';
+import { DEFAULT_AVAILABILITY } from './availability';
 import SetupPage from './pages/SetupPage';
 import ExecutionPage from './pages/ExecutionPage';
 import ReportPage from './pages/ReportPage';
@@ -14,7 +15,7 @@ const App: React.FC = () => {
     schedule: null,
     report: null,
     currentView: 'setup',
-    availableHoursPerDay: 4,
+    availability: DEFAULT_AVAILABILITY,
     currentWeekStartDate: getWeekStartDate(),
   });
   const [showHelp, setShowHelp] = useState(false);
@@ -79,6 +80,10 @@ const App: React.FC = () => {
     updateAppState({ scriptText });
   };
 
+  const handleAvailabilityChange = (availability: string) => {
+    updateAppState({ availability });
+  };
+
   const handleNavigate = (view: string) => {
     updateAppState({ currentView: view as any });
   };
@@ -108,9 +113,10 @@ const App: React.FC = () => {
             tasks={appState.tasks}
             scriptText={appState.scriptText || ''}
             schedule={appState.schedule}
-            availableHoursPerDay={appState.availableHoursPerDay}
+            availability={appState.availability}
             onTasksUpdate={handleTasksUpdate}
             onScriptChange={handleScriptChange}
+            onAvailabilityChange={handleAvailabilityChange}
             onScheduleUpdate={handleScheduleUpdate}
           />
         );

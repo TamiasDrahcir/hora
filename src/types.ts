@@ -91,7 +91,7 @@ export interface AppState {
   schedule: WeeklySchedule | null;
   report: WeeklyReport | null;
   currentView: 'setup' | 'execution' | 'report' | 'adjustments';
-  availableHoursPerDay: number;
+  availability: string; // weekly availability windows, e.g. "{MTWRF}0900-1800"
   currentWeekStartDate: Date;
   scriptText?: string; // task script source in the setup editor
 }

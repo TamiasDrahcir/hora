@@ -1,18 +1,21 @@
 import React, { useMemo, useState } from 'react';
 import { Card, Button, Form, Container, Row, Col } from 'react-bootstrap';
+import { v4 as uuidv4 } from 'uuid';
 import type { Task, ScheduleBlock, WeeklySchedule } from '../types';
-import { isRigid, timeToMinutes } from '../utils';
+import { isRigid, timeToMinutes, minutesToTime } from '../utils';
 import { parseTaskScript, tasksToScript, type ScriptError } from '../taskScript';
 import { scheduleWeek } from '../scheduler';
+import { parseAvailability, totalAvailabilityHours, DEFAULT_AVAILABILITY } from '../availability';
 import TimeGridCalendar from '../components/TimeGridCalendar';
 
 interface SetupPageProps {
   tasks: Task[];
   scriptText: string;
   schedule: WeeklySchedule | null;
-  availableHoursPerDay: number;
+  availability: string;
   onTasksUpdate: (tasks: Task[]) => void;
   onScriptChange: (script: string) => void;
+  onAvailabilityChange: (availability: string) => void;
   onScheduleUpdate: (schedule: WeeklySchedule | null) => void;
 }
 
@@ -46,14 +49,24 @@ const SetupPage: React.FC<SetupPageProps> = ({
   tasks,
   scriptText,
   schedule,
-  availableHoursPerDay,
+  availability: availabilityText,
   onTasksUpdate,
   onScriptChange,
+  onAvailabilityChange,
   onScheduleUpdate,
 }) => {
   const [errors, setErrors] = useState<ScriptError[]>([]);
   const [summary, setSummary] = useState<string | null>(null);
   const [showSyntax, setShowSyntax] = useState(false);
+  const [calendarNotice, setCalendarNotice] = useState<string | null>(null);
+
+  // An invalid availability entry falls back to the default so the calendar and scheduler stay usable
+  const parsedAvailability = useMemo(() => parseAvailability(availabilityText), [availabilityText]);
+  const availability = useMemo(
+    () => (parsedAvailability.errors.length > 0 ? parseAvailability(DEFAULT_AVAILABILITY).availability : parsedAvailability.availability),
+    [parsedAvailability]
+  );
+  const availableHours = totalAvailabilityHours(availability);
 
   // Prefill the editor from existing tasks when there is no saved script yet
   const effectiveScript = scriptText || (tasks.length > 0 ? tasksToScript(tasks) : '');
@@ -80,7 +93,8 @@ const SetupPage: React.FC<SetupPageProps> = ({
   };
 
   const handleGenerateSchedule = () => {
-    onScheduleUpdate(scheduleWeek(tasks, availableHoursPerDay * 5));
+    setCalendarNotice(null);
+    onScheduleUpdate(scheduleWeek(tasks, availability));
   };
 
   // Before generating, only rigid timeslots are on the calendar; afterwards it shows the proposed schedule
@@ -156,6 +170,81 @@ const SetupPage: React.FC<SetupPageProps> = ({
     return result;
   }, [tasks, schedule]);
 
+  const currentBlocks = schedule ? schedule.blocks : rigidBlocks;
+
+  // Manual edits turn the current calendar into the schedule, so drags work before generating too
+  const commitBlocks = (blocks: ScheduleBlock[]) => {
+    const anchorHours = blocks.filter(b => b.blockType === 'anchor').reduce((sum, b) => sum + b.durationMinutes, 0) / 60;
+    onScheduleUpdate({
+      weekStartDate: schedule?.weekStartDate ?? new Date(),
+      blocks,
+      totalAvailableHours: availableHours,
+      totalAnchorHours: anchorHours,
+      totalObjectiveHours: anchorHours,
+    });
+  };
+
+  const overlapsExisting = (day: string, startTime: string, durationMinutes: number, ignoreId?: string): boolean => {
+    const start = timeToMinutes(startTime);
+    const end = start + durationMinutes;
+    return currentBlocks.some(
+      b => b.id !== ignoreId && b.dayOfWeek === day && start < timeToMinutes(b.endTime) && end > timeToMinutes(b.startTime)
+    );
+  };
+
+  const handleMoveBlock = (block: ScheduleBlock, day: string, startTime: string) => {
+    if (overlapsExisting(day, startTime, block.durationMinutes, block.id)) {
+      setCalendarNotice('That spot overlaps another block.');
+      return;
+    }
+    setCalendarNotice(null);
+    const endTime = minutesToTime(timeToMinutes(startTime) + block.durationMinutes);
+    commitBlocks(currentBlocks.map(b => (b.id === block.id ? { ...b, dayOfWeek: day, startTime, endTime } : b)));
+  };
+
+  const handlePlaceCandidate = (candidate: ScheduleBlock, subItemId: string | undefined, day: string, startTime: string) => {
+    const task = tasks.find(t => t.id === candidate.taskId);
+    if (!task) return;
+    const objective = subItemId ? task.objectives.find(o => o.id === subItemId) : undefined;
+    const durationMinutes = (objective ? objective.hoursRequired : task.hoursRequired) * 60;
+
+    if (overlapsExisting(day, startTime, durationMinutes)) {
+      setCalendarNotice('That spot overlaps another block.');
+      return;
+    }
+    setCalendarNotice(null);
+
+    commitBlocks([
+      ...currentBlocks,
+      {
+        id: `block-${uuidv4()}`,
+        taskId: task.id,
+        taskCode: task.code,
+        taskName: task.name,
+        objectiveId: objective?.id,
+        objectiveCode: objective?.code,
+        objectiveName: objective?.name,
+        priority: task.priority,
+        blockType: 'anchor',
+        dayOfWeek: day,
+        startTime,
+        endTime: minutesToTime(timeToMinutes(startTime) + durationMinutes),
+        durationMinutes,
+        completed: false,
+        isSporadic: false,
+        description: objective?.description || task.description,
+      },
+    ]);
+  };
+
+  // Unscheduling returns a block to the candidate lane; rigid blocks are fixed
+  const handleRemoveBlock = (blockId: string) => {
+    const block = currentBlocks.find(b => b.id === blockId);
+    if (!block || block.blockType !== 'anchor') return;
+    setCalendarNotice(null);
+    commitBlocks(currentBlocks.filter(b => b.id !== blockId));
+  };
+
   return (
     <Container fluid className="fade-in">
       <h1 className="page-title">Setup Your Tasks</h1>
@@ -210,13 +299,40 @@ const SetupPage: React.FC<SetupPageProps> = ({
           <Card className="card-stoic">
             <Card.Body className="d-flex flex-column">
               <h6 className="mb-2">Weekly Calendar</h6>
+              <div className="availability-config mb-2">
+                <div className="d-flex align-items-center gap-2">
+                  <Form.Label className="mb-0 small text-nowrap">Available hours</Form.Label>
+                  <Form.Control
+                    size="sm"
+                    type="text"
+                    spellCheck={false}
+                    value={availabilityText}
+                    placeholder="{MTWRF}0900-1800, {SU}1000-1400"
+                    isInvalid={parsedAvailability.errors.length > 0}
+                    onChange={(e) => onAvailabilityChange(e.target.value)}
+                  />
+                  <small className="text-muted text-nowrap">{availableHours}h / week</small>
+                </div>
+                {parsedAvailability.errors.length > 0 && (
+                  <div className="script-errors mt-1">
+                    {parsedAvailability.errors.map((message, i) => <div key={i}>{message}</div>)}
+                    <div>Using the default {DEFAULT_AVAILABILITY} until fixed.</div>
+                  </div>
+                )}
+              </div>
               <div className="calendar-with-lane">
                 <TimeGridCalendar
-                  blocks={schedule ? schedule.blocks : rigidBlocks}
+                  blocks={currentBlocks}
                   candidateBlocks={candidateBlocks}
+                  availability={availability}
+                  editable
                   showCandidateLane
+                  onMoveBlock={handleMoveBlock}
+                  onPlaceCandidate={handlePlaceCandidate}
+                  onRemoveBlock={handleRemoveBlock}
                 />
               </div>
+              {calendarNotice && <div className="script-errors mt-2">{calendarNotice}</div>}
               <div className="d-flex justify-content-end mt-3">
                 <Button
                   className="btn-stoic"

@@ -3,24 +3,23 @@
 import type { Task, ScheduleBlock, WeeklySchedule, Objective } from './types';
 import {
   sortTasksForScheduling,
-  findGapsInDay,
+  findGapsInWindows,
   timeToMinutes,
   minutesToTime,
   isRigid,
   DAYS_OF_WEEK
 } from './utils';
-
-const SCHEDULING_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+import { totalAvailabilityHours, type Availability } from './availability';
 
 export class HORAScheduler {
   private tasks: Task[];
-  private totalAvailableMinutes: number;
+  private availability: Availability;
   private blocks: ScheduleBlock[] = [];
   private blockCounter: number = 0;
 
-  constructor(tasks: Task[], totalAvailableHours: number) {
+  constructor(tasks: Task[], availability: Availability) {
     this.tasks = tasks;
-    this.totalAvailableMinutes = totalAvailableHours * 60;
+    this.availability = availability;
   }
 
   schedule(): WeeklySchedule {
@@ -36,7 +35,7 @@ export class HORAScheduler {
     return {
       weekStartDate: new Date(),
       blocks: this.blocks,
-      totalAvailableHours: this.totalAvailableMinutes / 60,
+      totalAvailableHours: totalAvailabilityHours(this.availability),
       totalAnchorHours: this.calculateTotalAnchorHours(),
       totalObjectiveHours: this.calculateTotalObjectiveHours(),
     };
@@ -62,7 +61,7 @@ export class HORAScheduler {
     );
 
     for (const task of sortedTasks) {
-      const { days, lastDayLimit } = this.getDeadlineWindow(task);
+      const { days, limitFor } = this.getDeadlineWindow(task);
 
       // A task is represented by its subobjectives; only a task without any is placed as a whole.
       // Buffer is unscheduled slack, so it is never placed.
@@ -72,40 +71,40 @@ export class HORAScheduler {
       for (const objective of items) {
         const hours = objective ? objective.hoursRequired : task.hoursRequired;
         // Anything that doesn't fit before the deadline stays unplaced (in the candidate lane)
-        this.placeContinuous(task, objective, days, lastDayLimit, hours * 60);
+        this.placeContinuous(task, objective, days, limitFor, hours * 60);
       }
     }
   }
 
-  // Days a task may be scheduled on, and how late it may run on the deadline day
-  private getDeadlineWindow(task: Task): { days: string[]; lastDayLimit: number } {
+  // Available days up to the deadline, and how late work may run on each of them
+  private getDeadlineWindow(task: Task): { days: string[]; limitFor: (day: string) => number } {
     const [deadlineDay, deadlineTime] = (task.deadline || '').split(' ');
     const deadlineIndex = DAYS_OF_WEEK.indexOf(deadlineDay);
-    const lastDay = deadlineIndex >= 0 ? Math.min(deadlineIndex, SCHEDULING_DAYS.length - 1) : SCHEDULING_DAYS.length - 1;
-    const days = SCHEDULING_DAYS.slice(0, lastDay + 1);
 
-    // Deadlines after Friday still allow all of Monday-Friday up to the end of the day
-    const deadlineOnSchedulingDay = deadlineIndex >= 0 && deadlineIndex <= SCHEDULING_DAYS.length - 1;
-    const lastDayLimit = deadlineOnSchedulingDay && deadlineTime ? timeToMinutes(deadlineTime) : 24 * 60;
-    return { days, lastDayLimit };
+    const days = DAYS_OF_WEEK.filter(
+      (day, index) => (this.availability[day]?.length ?? 0) > 0 && (deadlineIndex < 0 || index <= deadlineIndex)
+    );
+    const limitFor = (day: string) =>
+      day === deadlineDay && deadlineTime ? timeToMinutes(deadlineTime) : 24 * 60;
+
+    return { days, limitFor };
   }
 
   private placeContinuous(
     task: Task,
     objective: Objective | undefined,
     days: string[],
-    lastDayLimit: number,
+    limitFor: (day: string) => number,
     requiredMinutes: number
   ): boolean {
     for (const day of days) {
-      const limit = day === days[days.length - 1] ? lastDayLimit : 24 * 60;
+      const limit = limitFor(day);
 
-      for (const gap of findGapsInDay(this.blocks, day)) {
-        const start = timeToMinutes(gap.start);
-        const end = Math.min(timeToMinutes(gap.end), limit);
+      for (const gap of findGapsInWindows(this.blocks, day, this.availability[day])) {
+        const end = Math.min(gap.end, limit);
 
-        if (end - start >= requiredMinutes) {
-          this.addBlock(task, objective, day, minutesToTime(start), minutesToTime(start + requiredMinutes), requiredMinutes);
+        if (end - gap.start >= requiredMinutes) {
+          this.addBlock(task, objective, day, minutesToTime(gap.start), minutesToTime(gap.start + requiredMinutes), requiredMinutes);
           return true;
         }
       }
@@ -154,7 +153,7 @@ export class HORAScheduler {
   }
 }
 
-export function scheduleWeek(tasks: Task[], totalAvailableHours: number): WeeklySchedule {
-  const scheduler = new HORAScheduler(tasks, totalAvailableHours);
+export function scheduleWeek(tasks: Task[], availability: Availability): WeeklySchedule {
+  const scheduler = new HORAScheduler(tasks, availability);
   return scheduler.schedule();
 }

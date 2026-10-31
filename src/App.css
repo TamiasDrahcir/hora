@@ -482,3 +482,35 @@ body.tech-theme .modal-content {
   font-style: italic;
   opacity: 0.8;
 }
+
+/* ===== Availability + drag affordances ===== */
+.time-grid-unavailable {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background-color: rgba(0, 0, 0, 0.06);
+  background-image: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.05) 0 6px, transparent 6px 12px);
+  pointer-events: none;
+}
+
+.tech-theme .time-grid-unavailable {
+  background-color: rgba(0, 255, 65, 0.04);
+  background-image: repeating-linear-gradient(135deg, rgba(0, 255, 65, 0.06) 0 6px, transparent 6px 12px);
+}
+
+.time-grid-block.movable,
+.candidate-block.movable,
+.candidate-sub-block.movable {
+  cursor: grab;
+}
+
+.time-grid-block.movable:active,
+.candidate-block.movable:active,
+.candidate-sub-block.movable:active {
+  cursor: grabbing;
+}
+
+.availability-config input {
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.8rem;
+}

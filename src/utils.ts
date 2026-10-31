@@ -124,6 +124,30 @@ export function indexToDay(index: number): string {
   return DAYS_OF_WEEK[index];
 }
 
+// Free gaps inside availability windows on a given day, in minutes from midnight
+export function findGapsInWindows(
+  blocks: ScheduleBlock[],
+  day: string,
+  windows: Array<{ start: number; end: number }>
+): Array<{ start: number; end: number }> {
+  const busy = blocks
+    .filter(b => b.dayOfWeek === day)
+    .map(b => ({ start: timeToMinutes(b.startTime), end: timeToMinutes(b.endTime) }))
+    .sort((a, b) => a.start - b.start);
+
+  const gaps: Array<{ start: number; end: number }> = [];
+  for (const window of windows) {
+    let cursor = window.start;
+    for (const block of busy) {
+      if (block.end <= cursor || block.start >= window.end) continue;
+      if (block.start > cursor) gaps.push({ start: cursor, end: block.start });
+      cursor = Math.max(cursor, block.end);
+    }
+    if (cursor < window.end) gaps.push({ start: cursor, end: window.end });
+  }
+  return gaps;
+}
+
 // Find gaps in a day's schedule
 export function findGapsInDay(blocks: ScheduleBlock[], day: string, dayStartMinutes: number = 540): Array<{ start: string; end: string; durationMinutes: number }> {
   const dayBlocks = blocks.filter(b => b.dayOfWeek === day).sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
