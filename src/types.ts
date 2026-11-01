@@ -97,5 +97,4 @@ export interface AppState {
   currentWeekStartDate: Date;
   scriptText?: string; // task script source in the setup editor
   notificationsEnabled?: boolean; // browser notifications for upcoming and overdue blocks
-  discordWebhook?: string; // Discord webhook that background alerts are also sent to
 }

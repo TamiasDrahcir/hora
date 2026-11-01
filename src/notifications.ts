@@ -1,8 +1,6 @@
-// Notifications for upcoming and overdue blocks.
-//
-// While HORA is open the app raises them itself (useBlockNotifications). The same alerts are also
-// handed to the push worker (see push.ts) so they arrive with the tab closed. Both use the same
-// key as the notification tag, so a device never shows the same alert twice.
+// Notifications for upcoming and overdue blocks, raised by the app while HORA is open in a tab
+// (useBlockNotifications). Each alert has a stable key, used as the notification tag and to
+// remember what has already been shown.
 
 import { useEffect, useRef } from 'react';
 import type { ScheduleBlock, WeeklySchedule } from './types';
@@ -12,7 +10,6 @@ export const LEAD_MINUTES = 5;
 const LEAD_MS = LEAD_MINUTES * 60_000;
 const START_GRACE_MS = 5 * 60 * 1000; // still announce a block that began moments ago (e.g. throttled background tab)
 const END_GRACE_MS = 60 * 60 * 1000; // don't dig up long-expired blocks when the app is opened late
-const REMINDER_HORIZON_MS = 8 * 24 * 60 * 60 * 1000;
 const CHECK_INTERVAL_MS = 20_000;
 const STORAGE_KEY = 'horaNotified';
 const PRUNE_AFTER_MS = 10 * 24 * 60 * 60 * 1000;
@@ -21,10 +18,6 @@ export interface DueNotification {
   key: string;
   title: string;
   body: string;
-}
-
-export interface Reminder extends DueNotification {
-  fireAt: number; // epoch milliseconds
 }
 
 export function notificationsSupported(): boolean {
@@ -99,30 +92,6 @@ export function findDueNotifications(
   }
 
   return due;
-}
-
-// Every alert that will still need to fire, with its time, for the push worker to send
-export function buildUpcomingReminders(blocks: ScheduleBlock[], weekStart: Date, now: Date): Reminder[] {
-  const reminders: Reminder[] = [];
-  const t = now.getTime();
-
-  for (const block of blocks) {
-    if (!needsAlerts(block)) continue;
-
-    const startAlertAt = blockStartTime(weekStart, block).getTime() - LEAD_MS;
-    const endAlertAt = blockEndTime(weekStart, block).getTime();
-    const base = reminderBase(weekStart, block);
-
-    // Only future alerts: ones already due are handled by the open app, so a re-sync can't resend them
-    if (startAlertAt > t && startAlertAt <= t + REMINDER_HORIZON_MS) {
-      reminders.push({ key: `${base}|start`, fireAt: startAlertAt, ...startMessage(block, LEAD_MINUTES) });
-    }
-    if (block.blockType === 'anchor' && endAlertAt > t && endAlertAt <= t + REMINDER_HORIZON_MS) {
-      reminders.push({ key: `${base}|end`, fireAt: endAlertAt, ...endMessage(block) });
-    }
-  }
-
-  return reminders.sort((a, b) => a.fireAt - b.fireAt);
 }
 
 function loadFired(): Record<string, number> {

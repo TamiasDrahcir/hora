@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ScheduleBlock, Task } from '../types';
-import { DAYS_OF_WEEK, minutesToTime, timeToMinutes, formatDurationHours, isRigid } from '../utils';
+import { DAYS_OF_WEEK, PRIORITY_LABELS, minutesToTime, timeToMinutes, formatDurationHours, isRigid } from '../utils';
 import type { Availability, TimeWindow } from '../availability';
 
 export type BlockAction = 'toggle-complete' | 'toggle-mothball' | 'abandon';
@@ -24,13 +24,6 @@ interface TimeGridCalendarProps {
 
 const DEFAULT_RANGE: TimeWindow = { start: 8 * 60, end: 22 * 60 };
 const SLOT_MINUTES = 15;
-
-const PRIORITY_LABELS: Record<string, string> = {
-  earth: 'Earth (rigid, important)',
-  water: 'Water (flexible, important)',
-  fire: 'Fire (rigid, less important)',
-  air: 'Air (flexible, less important)',
-};
 
 function formatHour(minutes: number): string {
   const hour = Math.floor(minutes / 60);

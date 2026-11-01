@@ -3,6 +3,13 @@
 import type { Task, ScheduleBlock, Priority, Objective } from './types';
 
 export const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+export const PRIORITY_LABELS: Record<string, string> = {
+  earth: 'Earth (rigid, important)',
+  water: 'Water (flexible, important)',
+  fire: 'Fire (rigid, less important)',
+  air: 'Air (flexible, less important)',
+};
 export const WORKING_HOURS = 9; // 9 AM to 6 PM
 export const MINUTES_PER_HOUR = 60;
 

@@ -4,7 +4,6 @@ import type { AppState, ScheduleBlock, Task } from './types';
 import { getWeekStartDate } from './utils';
 import { DEFAULT_AVAILABILITY } from './availability';
 import { useBlockNotifications } from './notifications';
-import { useAlertSync } from './push';
 import SetupPage from './pages/SetupPage';
 import ExecutionPage from './pages/ExecutionPage';
 import ReportPage from './pages/ReportPage';
@@ -31,13 +30,14 @@ const App: React.FC = () => {
     
     if (savedState) {
       try {
-        const parsed = JSON.parse(savedState);
+        // discordWebhook is a leftover from a removed feature and was a secret, so drop it from storage
+        const { discordWebhook: _legacyWebhook, ...saved } = JSON.parse(savedState);
         setAppState(prev => ({
           ...prev,
-          ...parsed,
+          ...saved,
           // The Schedule view no longer exists; older saved state may still point at it
-          currentView: parsed.currentView === 'schedule' ? 'setup' : parsed.currentView,
-          currentWeekStartDate: new Date(parsed.currentWeekStartDate),
+          currentView: saved.currentView === 'schedule' ? 'setup' : saved.currentView,
+          currentWeekStartDate: new Date(saved.currentWeekStartDate),
         }));
       } catch (e) {
         console.error('Failed to load saved state', e);
@@ -90,35 +90,30 @@ const App: React.FC = () => {
     updateAppState({ notificationsEnabled });
   };
 
-  const handleDiscordWebhookChange = (discordWebhook: string) => {
-    updateAppState({ discordWebhook });
-  };
-
   const handleNavigate = (view: string) => {
     updateAppState({ currentView: view as any });
   };
 
   // Alerts fire whichever page is open; waiting for hydration avoids acting on the empty initial state
-  const notificationsOn = hydrated && !!appState.notificationsEnabled;
-  useBlockNotifications(appState.schedule, notificationsOn, () => handleNavigate('execution'));
-  const alerts = useAlertSync(appState.schedule, notificationsOn, appState.discordWebhook || '');
+  useBlockNotifications(appState.schedule, hydrated && !!appState.notificationsEnabled, () => handleNavigate('execution'));
 
-  // Clicking a push notification lands here: via a message when HORA is open, or ?view=execution when it opened fresh
+  // An earlier version registered a service worker and a push subscription; remove them so nothing lingers
   useEffect(() => {
-    if (!hydrated) return;
-
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('view') === 'execution') {
-      handleNavigate('execution');
-      window.history.replaceState(null, '', window.location.pathname);
-    }
-
-    const onMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'hora:open-execution') handleNavigate('execution');
-    };
-    navigator.serviceWorker?.addEventListener('message', onMessage);
-    return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
-  }, [hydrated]);
+    localStorage.removeItem('horaClientId');
+    localStorage.removeItem('horaAlertsSynced');
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker
+      .getRegistrations()
+      .then(registrations =>
+        Promise.all(
+          registrations.map(async registration => {
+            await (await registration.pushManager.getSubscription())?.unsubscribe();
+            await registration.unregister();
+          })
+        )
+      )
+      .catch(() => undefined);
+  }, []);
 
   const handleBlockUpdate = (blockId: string, updates: Partial<ScheduleBlock>) => {
     setAppState(prev => {
@@ -143,13 +138,10 @@ const App: React.FC = () => {
             schedule={appState.schedule}
             availability={appState.availability}
             notificationsEnabled={!!appState.notificationsEnabled}
-            alerts={alerts}
-            discordWebhook={appState.discordWebhook || ''}
             onTasksUpdate={handleTasksUpdate}
             onScriptChange={handleScriptChange}
             onAvailabilityChange={handleAvailabilityChange}
             onNotificationsChange={handleNotificationsChange}
-            onDiscordWebhookChange={handleDiscordWebhookChange}
             onScheduleUpdate={handleScheduleUpdate}
             onNavigate={handleNavigate}
           />
@@ -161,10 +153,7 @@ const App: React.FC = () => {
             tasks={appState.tasks}
             availability={appState.availability}
             notificationsEnabled={!!appState.notificationsEnabled}
-            alerts={alerts}
-            discordWebhook={appState.discordWebhook || ''}
             onNotificationsChange={handleNotificationsChange}
-            onDiscordWebhookChange={handleDiscordWebhookChange}
             onBlockUpdate={handleBlockUpdate}
             onNavigate={handleNavigate}
           />
@@ -275,9 +264,9 @@ const App: React.FC = () => {
           <h6 className="mt-3">Notifications</h6>
           <p>
             Turn on the Notifications switch (Setup or Execute) to get an alert 5 minutes before a block or event starts,
-            and when a task block ends without being completed. Browser alerts also arrive with HORA closed when your
-            browser supports push. Click Discord next to the switch to receive the same alerts in a Discord channel on
-            your phone and desktop, which works in any browser.
+            and when a task block ends without being completed. Alerts appear while HORA is open in a browser tab. To
+            get reminders any time, use Export calendar or Sync to Google Calendar on the Execute page, which put your
+            blocks in Google Calendar with a 5-minute reminder.
           </p>
 
           <h6 className="mt-3">Revenue and Balance</h6>
