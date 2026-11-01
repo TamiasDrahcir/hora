@@ -42,10 +42,10 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
 
   const getPriorityColor = (priority: string): string => {
     const colors = {
-      earth: '#8b4513',
+      earth: '#cc7722',
       water: '#4169e1',
       fire: '#ff6347',
-      air: '#daa520',
+      air: '#144e5a',
     };
     return colors[priority as keyof typeof colors] || '#999';
   };
