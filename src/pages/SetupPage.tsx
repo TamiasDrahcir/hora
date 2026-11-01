@@ -9,7 +9,7 @@ import { resolveAvailability, totalAvailabilityHours, DEFAULT_AVAILABILITY } fro
 import { planningWeekStart } from '../revenue';
 import TimeGridCalendar from '../components/TimeGridCalendar';
 import NotificationSettings from '../components/NotificationSettings';
-import type { PushState } from '../push';
+import type { AlertSyncState } from '../push';
 
 interface SetupPageProps {
   tasks: Task[];
@@ -17,11 +17,13 @@ interface SetupPageProps {
   schedule: WeeklySchedule | null;
   availability: string;
   notificationsEnabled: boolean;
-  push: PushState;
+  alerts: AlertSyncState;
+  discordWebhook: string;
   onTasksUpdate: (tasks: Task[]) => void;
   onScriptChange: (script: string) => void;
   onAvailabilityChange: (availability: string) => void;
   onNotificationsChange: (enabled: boolean) => void;
+  onDiscordWebhookChange: (webhook: string) => void;
   onScheduleUpdate: (schedule: WeeklySchedule | null) => void;
   onNavigate: (view: string) => void;
 }
@@ -61,11 +63,13 @@ const SetupPage: React.FC<SetupPageProps> = ({
   schedule,
   availability: availabilityText,
   notificationsEnabled,
-  push,
+  alerts,
+  discordWebhook,
   onTasksUpdate,
   onScriptChange,
   onAvailabilityChange,
   onNotificationsChange,
+  onDiscordWebhookChange,
   onScheduleUpdate,
   onNavigate,
 }) => {
@@ -321,7 +325,13 @@ const SetupPage: React.FC<SetupPageProps> = ({
             <Card.Body className="d-flex flex-column">
               <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                 <h6 className="mb-0">Weekly Calendar</h6>
-                <NotificationSettings enabled={notificationsEnabled} push={push} onChange={onNotificationsChange} />
+                <NotificationSettings
+                  enabled={notificationsEnabled}
+                  alerts={alerts}
+                  discordWebhook={discordWebhook}
+                  onChange={onNotificationsChange}
+                  onDiscordWebhookChange={onDiscordWebhookChange}
+                />
               </div>
               <div className="availability-config mb-2">
                 <div className="d-flex align-items-center gap-2">

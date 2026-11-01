@@ -698,3 +698,24 @@ body.tech-theme .priority-water {
   margin-right: 0.3rem;
   vertical-align: -1px;
 }
+
+/* Discord webhook panel inside the notification settings */
+.discord-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--stoic-border);
+  border-radius: 6px;
+  background-color: var(--stoic-light);
+}
+
+.tech-theme .discord-panel {
+  background-color: #1a1f3a;
+  border-color: var(--tech-border);
+}
+
+.notification-error {
+  line-height: 1.3;
+}
