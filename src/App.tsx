@@ -4,6 +4,7 @@ import type { AppState, ScheduleBlock, Task } from './types';
 import { getWeekStartDate } from './utils';
 import { DEFAULT_AVAILABILITY } from './availability';
 import { useBlockNotifications } from './notifications';
+import { usePushSync } from './push';
 import SetupPage from './pages/SetupPage';
 import ExecutionPage from './pages/ExecutionPage';
 import ReportPage from './pages/ReportPage';
@@ -94,11 +95,26 @@ const App: React.FC = () => {
   };
 
   // Alerts fire whichever page is open; waiting for hydration avoids acting on the empty initial state
-  useBlockNotifications(
-    appState.schedule,
-    hydrated && !!appState.notificationsEnabled,
-    () => handleNavigate('execution')
-  );
+  const notificationsOn = hydrated && !!appState.notificationsEnabled;
+  useBlockNotifications(appState.schedule, notificationsOn, () => handleNavigate('execution'));
+  const pushStatus = usePushSync(appState.schedule, notificationsOn);
+
+  // Clicking a push notification lands here: via a message when HORA is open, or ?view=execution when it opened fresh
+  useEffect(() => {
+    if (!hydrated) return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('view') === 'execution') {
+      handleNavigate('execution');
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'hora:open-execution') handleNavigate('execution');
+    };
+    navigator.serviceWorker?.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker?.removeEventListener('message', onMessage);
+  }, [hydrated]);
 
   const handleBlockUpdate = (blockId: string, updates: Partial<ScheduleBlock>) => {
     setAppState(prev => {
@@ -123,6 +139,7 @@ const App: React.FC = () => {
             schedule={appState.schedule}
             availability={appState.availability}
             notificationsEnabled={!!appState.notificationsEnabled}
+            pushStatus={pushStatus}
             onTasksUpdate={handleTasksUpdate}
             onScriptChange={handleScriptChange}
             onAvailabilityChange={handleAvailabilityChange}
@@ -138,6 +155,7 @@ const App: React.FC = () => {
             tasks={appState.tasks}
             availability={appState.availability}
             notificationsEnabled={!!appState.notificationsEnabled}
+            pushStatus={pushStatus}
             onNotificationsChange={handleNotificationsChange}
             onBlockUpdate={handleBlockUpdate}
             onNavigate={handleNavigate}

@@ -1,0 +1,22 @@
+{
+  "name": "hora-push-worker",
+  "private": true,
+  "type": "module",
+  "description": "Sends HORA reminders as Web Push notifications on a schedule",
+  "scripts": {
+    "keys": "node scripts/generate-vapid-keys.mjs",
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "db:init": "wrangler d1 execute hora-push --remote --file=./schema.sql",
+    "db:init:local": "wrangler d1 execute hora-push --local --file=./schema.sql"
+  },
+  "dependencies": {
+    "@block65/webcrypto-web-push": "^2.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261023.1",
+    "typescript": "^5.9.0",
+    "wrangler": "^4.0.0"
+  }
+}

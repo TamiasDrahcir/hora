@@ -1,13 +1,18 @@
-// Browser notifications for upcoming and overdue blocks.
-// These only fire while HORA is open in a browser tab; delivery with the tab closed needs a push server.
+// Notifications for upcoming and overdue blocks.
+//
+// While HORA is open the app raises them itself (useBlockNotifications). The same alerts are also
+// handed to the push worker (see push.ts) so they arrive with the tab closed. Both use the same
+// key as the notification tag, so a device never shows the same alert twice.
 
 import { useEffect, useRef } from 'react';
 import type { ScheduleBlock, WeeklySchedule } from './types';
 import { blockEndTime, blockStartTime, planningWeekStart } from './revenue';
 
 export const LEAD_MINUTES = 5;
+const LEAD_MS = LEAD_MINUTES * 60_000;
 const START_GRACE_MS = 5 * 60 * 1000; // still announce a block that began moments ago (e.g. throttled background tab)
 const END_GRACE_MS = 60 * 60 * 1000; // don't dig up long-expired blocks when the app is opened late
+const REMINDER_HORIZON_MS = 8 * 24 * 60 * 60 * 1000;
 const CHECK_INTERVAL_MS = 20_000;
 const STORAGE_KEY = 'horaNotified';
 const PRUNE_AFTER_MS = 10 * 24 * 60 * 60 * 1000;
@@ -18,6 +23,10 @@ export interface DueNotification {
   body: string;
 }
 
+export interface Reminder extends DueNotification {
+  fireAt: number; // epoch milliseconds
+}
+
 export function notificationsSupported(): boolean {
   return typeof window !== 'undefined' && 'Notification' in window;
 }
@@ -26,10 +35,39 @@ export function notificationPermission(): NotificationPermission | 'unsupported'
   return notificationsSupported() ? Notification.permission : 'unsupported';
 }
 
-function describeBlock(block: ScheduleBlock): { label: string; detail: string } {
-  const label = block.objectiveCode || block.taskCode;
-  const detail = block.objectiveName ? `${block.taskName} - ${block.objectiveName}` : block.taskName;
-  return { label, detail };
+// Mothballed and abandoned work is off the schedule; completed work needs no nudge
+function needsAlerts(block: ScheduleBlock): boolean {
+  if (block.blockType !== 'anchor') return true;
+  return block.status !== 'abandoned' && block.status !== 'mothballed' && !block.completed;
+}
+
+// Block identity includes its slot, so moving a block makes it eligible again
+function reminderBase(weekStart: Date, block: ScheduleBlock): string {
+  return `${weekStart.toISOString().slice(0, 10)}|${block.id}|${block.dayOfWeek}|${block.startTime}`;
+}
+
+function describeBlock(block: ScheduleBlock): { label: string; detail: string; when: string } {
+  return {
+    label: block.objectiveCode || block.taskCode,
+    detail: block.objectiveName ? `${block.taskName} - ${block.objectiveName}` : block.taskName,
+    when: `${block.dayOfWeek} ${block.startTime} - ${block.endTime}`,
+  };
+}
+
+function startMessage(block: ScheduleBlock, minutesAway: number): { title: string; body: string } {
+  const { label, detail, when } = describeBlock(block);
+  return {
+    title: minutesAway > 0 ? `${label} starts in ${minutesAway} min` : `${label} is starting now`,
+    body: `${detail}\n${when}`,
+  };
+}
+
+function endMessage(block: ScheduleBlock): { title: string; body: string } {
+  const { label, detail, when } = describeBlock(block);
+  return {
+    title: `Time's up: ${label}`,
+    body: `${detail}\n${when} ended without being completed. Complete, mothball or abandon it.`,
+  };
 }
 
 // Which notifications should fire right now, skipping ones already sent
@@ -40,42 +78,51 @@ export function findDueNotifications(
   alreadyFired: Record<string, number>
 ): DueNotification[] {
   const due: DueNotification[] = [];
-  const weekKey = weekStart.toISOString().slice(0, 10);
+  const t = now.getTime();
 
   for (const block of blocks) {
-    const isFlexible = block.blockType === 'anchor';
-    // Mothballed and abandoned work is off the schedule; completed work needs no nudge
-    if (isFlexible && (block.status === 'abandoned' || block.status === 'mothballed' || block.completed)) continue;
+    if (!needsAlerts(block)) continue;
 
     const start = blockStartTime(weekStart, block).getTime();
     const end = blockEndTime(weekStart, block).getTime();
-    const t = now.getTime();
-    // Block identity includes its slot, so moving a block makes it eligible again
-    const base = `${weekKey}|${block.id}|${block.dayOfWeek}|${block.startTime}`;
-    const { label, detail } = describeBlock(block);
-    const when = `${block.dayOfWeek} ${block.startTime} - ${block.endTime}`;
+    const base = reminderBase(weekStart, block);
 
     const startKey = `${base}|start`;
-    if (!alreadyFired[startKey] && t >= start - LEAD_MINUTES * 60_000 && t < start + START_GRACE_MS) {
-      const minutes = Math.ceil((start - t) / 60_000);
-      due.push({
-        key: startKey,
-        title: minutes > 0 ? `${label} starts in ${minutes} min` : `${label} is starting now`,
-        body: `${detail}\n${when}`,
-      });
+    if (!alreadyFired[startKey] && t >= start - LEAD_MS && t < start + START_GRACE_MS) {
+      due.push({ key: startKey, ...startMessage(block, Math.ceil((start - t) / 60_000)) });
     }
 
     const endKey = `${base}|end`;
-    if (isFlexible && !alreadyFired[endKey] && t >= end && t < end + END_GRACE_MS) {
-      due.push({
-        key: endKey,
-        title: `Time's up: ${label}`,
-        body: `${detail}\n${when} ended without being completed. Complete, mothball or abandon it.`,
-      });
+    if (block.blockType === 'anchor' && !alreadyFired[endKey] && t >= end && t < end + END_GRACE_MS) {
+      due.push({ key: endKey, ...endMessage(block) });
     }
   }
 
   return due;
+}
+
+// Every alert that will still need to fire, with its time, for the push worker to send
+export function buildUpcomingReminders(blocks: ScheduleBlock[], weekStart: Date, now: Date): Reminder[] {
+  const reminders: Reminder[] = [];
+  const t = now.getTime();
+
+  for (const block of blocks) {
+    if (!needsAlerts(block)) continue;
+
+    const startAlertAt = blockStartTime(weekStart, block).getTime() - LEAD_MS;
+    const endAlertAt = blockEndTime(weekStart, block).getTime();
+    const base = reminderBase(weekStart, block);
+
+    // Only future alerts: ones already due are handled by the open app, so a re-sync can't resend them
+    if (startAlertAt > t && startAlertAt <= t + REMINDER_HORIZON_MS) {
+      reminders.push({ key: `${base}|start`, fireAt: startAlertAt, ...startMessage(block, LEAD_MINUTES) });
+    }
+    if (block.blockType === 'anchor' && endAlertAt > t && endAlertAt <= t + REMINDER_HORIZON_MS) {
+      reminders.push({ key: `${base}|end`, fireAt: endAlertAt, ...endMessage(block) });
+    }
+  }
+
+  return reminders.sort((a, b) => a.fireAt - b.fireAt);
 }
 
 function loadFired(): Record<string, number> {

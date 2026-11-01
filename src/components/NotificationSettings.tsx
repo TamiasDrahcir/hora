@@ -7,13 +7,15 @@ import {
   notificationsSupported,
   showNotification,
 } from '../notifications';
+import { unsubscribePush, type PushStatus } from '../push';
 
 interface NotificationSettingsProps {
   enabled: boolean;
+  pushStatus: PushStatus;
   onChange: (enabled: boolean) => void;
 }
 
-const NotificationSettings: React.FC<NotificationSettingsProps> = ({ enabled, onChange }) => {
+const NotificationSettings: React.FC<NotificationSettingsProps> = ({ enabled, pushStatus, onChange }) => {
   // Re-read the browser permission after every interaction since the user can change it outside the app
   const [permission, setPermission] = useState(notificationPermission());
 
@@ -23,6 +25,7 @@ const NotificationSettings: React.FC<NotificationSettingsProps> = ({ enabled, on
   const handleToggle = async (checked: boolean) => {
     if (!checked) {
       onChange(false);
+      await unsubscribePush();
       return;
     }
     const granted = await ensureNotificationPermission();
@@ -30,7 +33,10 @@ const NotificationSettings: React.FC<NotificationSettingsProps> = ({ enabled, on
     onChange(granted);
   };
 
-  let hint = `Alerts ${LEAD_MINUTES} min before a block starts and when one ends uncompleted. Works while HORA is open in a tab.`;
+  let hint = `Alerts ${LEAD_MINUTES} min before a block starts and when one ends uncompleted.`;
+  hint += pushStatus === 'ready'
+    ? ' Background alerts are on, so they arrive even when HORA is closed.'
+    : ' They appear while HORA is open in a tab.';
   if (!supported) hint = 'Notifications are not supported in this browser.';
   else if (permission === 'denied') hint = 'Notifications are blocked. Allow them for this site in your browser settings.';
 
@@ -54,6 +60,11 @@ const NotificationSettings: React.FC<NotificationSettingsProps> = ({ enabled, on
         >
           Test
         </Button>
+      )}
+      {active && pushStatus === 'syncing' && <small className="text-muted">Setting up background alerts...</small>}
+      {active && pushStatus === 'ready' && <small className="text-muted">Background alerts on</small>}
+      {active && pushStatus === 'error' && (
+        <small className="text-danger">Background alerts couldn't sync; will retry on the next change</small>
       )}
       {(!supported || permission === 'denied') && <small className="text-muted">{hint}</small>}
     </div>

@@ -1,0 +1,25 @@
+name = "hora-push"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+# Runs the reminder sender every minute
+[triggers]
+crons = ["* * * * *"]
+
+# Created with: npx wrangler d1 create hora-push
+# Paste the database_id it prints below.
+[[d1_databases]]
+binding = "DB"
+database_name = "hora-push"
+database_id = "REPLACE_WITH_DATABASE_ID"
+
+[vars]
+# Browsers allowed to call the API (comma separated)
+ALLOWED_ORIGINS = "https://tamiasdrahcir.github.io,http://localhost:5173"
+# Contact URL included in push requests (an https URL or mailto: address)
+VAPID_SUBJECT = "https://tamiasdrahcir.github.io/hora/"
+# Public half of the keypair from `npm run keys` (safe to commit)
+VAPID_PUBLIC_KEY = "REPLACE_WITH_PUBLIC_KEY"
+
+# Secret, set with `npx wrangler secret put VAPID_PRIVATE_KEY` (never commit it):
+#   VAPID_PRIVATE_KEY
