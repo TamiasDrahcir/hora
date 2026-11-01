@@ -751,3 +751,43 @@ body.tech-theme .priority-water {
   font-size: 0.8rem;
   opacity: 0.8;
 }
+
+/* ===== Week picker and script library (Setup) ===== */
+.week-picker {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.week-picker input[type='date'] {
+  width: auto;
+}
+
+.script-library-menu {
+  min-width: 15rem;
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+.script-library-row {
+  display: flex;
+  align-items: center;
+}
+
+.script-library-row .dropdown-item {
+  flex: 1;
+  white-space: normal;
+}
+
+.script-library-delete {
+  border: none;
+  background: transparent;
+  color: #b91c1c;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 0.75rem;
+  cursor: pointer;
+}

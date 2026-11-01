@@ -89,13 +89,25 @@ export interface WeeklyReport {
   }>;
 }
 
-export interface AppState {
+export interface WeekPlan {
+  scriptText?: string; // task script source in the setup editor
+  availability: string; // weekly availability windows, e.g. "{MTWRF}0900-1800"
   tasks: Task[];
   schedule: WeeklySchedule | null;
+}
+
+export interface ScriptTemplate {
+  id: string;
+  name: string;
+  scriptText: string;
+  availability: string;
+}
+
+export interface AppState {
+  weeks: Record<string, WeekPlan>; // each week's plan, keyed by the local date (YYYY-MM-DD) of its Sunday
+  selectedWeek: string; // the week open on the Setup page; Execute and Report always use the current week
+  templates: ScriptTemplate[];
   report: WeeklyReport | null;
   currentView: 'setup' | 'execution' | 'report' | 'adjustments';
-  availability: string; // weekly availability windows, e.g. "{MTWRF}0900-1800"
-  currentWeekStartDate: Date;
-  scriptText?: string; // task script source in the setup editor
   notificationsEnabled?: boolean; // browser notifications for upcoming and overdue blocks
 }

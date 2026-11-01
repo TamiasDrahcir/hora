@@ -25,6 +25,26 @@ export function addDays(date: Date, days: number): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
 }
 
+// Local date as YYYY-MM-DD
+export function localDateKey(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+// Identifies a week by the local date of its Sunday, e.g. "2026-11-01"
+export function weekKeyOf(date: Date = new Date()): string {
+  return localDateKey(getWeekStartDate(date));
+}
+
+// Local midnight of a YYYY-MM-DD key (null if it isn't a real date)
+export function dateFromKey(key: string): Date | null {
+  const match = key.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const [year, month, day] = match.slice(1).map(Number);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? date : null;
+}
+
 export function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }

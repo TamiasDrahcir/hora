@@ -16,12 +16,14 @@ import { planningWeekStart } from './revenue';
 export class HORAScheduler {
   private tasks: Task[];
   private availability: Availability;
+  private weekStart: Date;
   private blocks: ScheduleBlock[] = [];
   private blockCounter: number = 0;
 
-  constructor(tasks: Task[], availability: Availability) {
+  constructor(tasks: Task[], availability: Availability, weekStart: Date = planningWeekStart(new Date())) {
     this.tasks = tasks;
     this.availability = availability;
+    this.weekStart = weekStart;
   }
 
   schedule(): WeeklySchedule {
@@ -35,7 +37,7 @@ export class HORAScheduler {
     this.placeAnchors();
 
     return {
-      weekStartDate: planningWeekStart(new Date()),
+      weekStartDate: this.weekStart,
       blocks: this.blocks,
       totalAvailableHours: totalAvailabilityHours(this.availability),
       totalAnchorHours: this.calculateTotalAnchorHours(),
@@ -135,7 +137,7 @@ export class HORAScheduler {
   }
 }
 
-export function scheduleWeek(tasks: Task[], availability: Availability): WeeklySchedule {
-  const scheduler = new HORAScheduler(tasks, availability);
+export function scheduleWeek(tasks: Task[], availability: Availability, weekStart?: Date): WeeklySchedule {
+  const scheduler = new HORAScheduler(tasks, availability, weekStart);
   return scheduler.schedule();
 }

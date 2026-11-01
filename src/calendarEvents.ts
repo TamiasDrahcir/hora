@@ -1,14 +1,14 @@
 // Turns the confirmed schedule into calendar events, for the .ics export and Google Calendar sync.
 
 import type { Priority, Task, WeeklySchedule } from './types';
-import { PRIORITY_LABELS, isRigid } from './utils';
+import { PRIORITY_LABELS, isRigid, localDateKey } from './utils';
 import { blockEndTime, blockStartTime, planningWeekStart } from './revenue';
 
 export const REMINDER_MINUTES = 5;
 
 export interface CalendarEvent {
   uid: string; // stable across exports and syncs, so the same block always maps to the same event
-  weekKey: string; // local date (YYYY-MM-DD) of the Monday the schedule belongs to
+  weekKey: string; // local date (YYYY-MM-DD) of the Sunday the schedule belongs to
   summary: string;
   description: string;
   start: Date;
@@ -19,10 +19,6 @@ export interface CalendarEvent {
 
 function pad(value: number, length = 2): string {
   return String(value).padStart(length, '0');
-}
-
-export function localDateKey(date: Date): string {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 export function scheduleWeekKey(schedule: WeeklySchedule): string {

@@ -1,17 +1,22 @@
 import React, { useMemo, useState } from 'react';
 import { Card, Button, Form, Container, Row, Col } from 'react-bootstrap';
 import { v4 as uuidv4 } from 'uuid';
-import type { Task, ScheduleBlock, WeeklySchedule } from '../types';
-import { isRigid, timeToMinutes, minutesToTime, fitsTaskWindow } from '../utils';
+import type { Task, ScheduleBlock, ScriptTemplate, WeekPlan, WeeklySchedule } from '../types';
+import { isRigid, timeToMinutes, minutesToTime, fitsTaskWindow, dateFromKey, formatWeekRange, getWeekStartDate, weekKeyOf } from '../utils';
 import { parseTaskScript, tasksToScript, type ScriptError } from '../taskScript';
 import { scheduleWeek } from '../scheduler';
 import { resolveAvailability, totalAvailabilityHours, DEFAULT_AVAILABILITY } from '../availability';
-import { planningWeekStart } from '../revenue';
+import { hasContent, planScript } from '../weekPlans';
 import TimeGridCalendar from '../components/TimeGridCalendar';
 import NotificationSettings from '../components/NotificationSettings';
 import WeekBanner from '../components/WeekBanner';
+import WeekPicker from '../components/WeekPicker';
+import ScriptLibrary, { type WeekSource } from '../components/ScriptLibrary';
 
 interface SetupPageProps {
+  weekKey: string; // the week being planned (local date of its Sunday)
+  weeks: Record<string, WeekPlan>;
+  templates: ScriptTemplate[];
   tasks: Task[];
   scriptText: string;
   schedule: WeeklySchedule | null;
@@ -22,6 +27,9 @@ interface SetupPageProps {
   onAvailabilityChange: (availability: string) => void;
   onNotificationsChange: (enabled: boolean) => void;
   onScheduleUpdate: (schedule: WeeklySchedule | null) => void;
+  onSelectWeek: (weekKey: string) => void;
+  onSaveTemplate: (name: string, scriptText: string, availability: string) => void;
+  onDeleteTemplate: (id: string) => void;
   onNavigate: (view: string) => void;
 }
 
@@ -57,6 +65,9 @@ Days: M T W R F S U (Mon..Sun)   Times: military (e.g. 2230)
 Lines starting with # are comments.`;
 
 const SetupPage: React.FC<SetupPageProps> = ({
+  weekKey,
+  weeks,
+  templates,
   tasks,
   scriptText,
   schedule,
@@ -67,6 +78,9 @@ const SetupPage: React.FC<SetupPageProps> = ({
   onAvailabilityChange,
   onNotificationsChange,
   onScheduleUpdate,
+  onSelectWeek,
+  onSaveTemplate,
+  onDeleteTemplate,
   onNavigate,
 }) => {
   const [errors, setErrors] = useState<ScriptError[]>([]);
@@ -79,17 +93,15 @@ const SetupPage: React.FC<SetupPageProps> = ({
   const availability = resolvedAvailability.availability;
   const availableHours = totalAvailabilityHours(availability);
 
-  // The week being planned: the schedule's own week, or the current week until one exists
-  const weekStart = useMemo(
-    () => planningWeekStart(schedule ? new Date(schedule.weekStartDate) : new Date()),
-    [schedule]
-  );
+  // The week being planned; it may be any week, and Execute only follows the current one
+  const weekStart = useMemo(() => dateFromKey(weekKey) ?? getWeekStartDate(), [weekKey]);
+  const isCurrentWeek = weekKey === weekKeyOf(new Date());
 
   // Prefill the editor from existing tasks when there is no saved script yet
   const effectiveScript = scriptText || (tasks.length > 0 ? tasksToScript(tasks) : '');
 
-  const handleCompile = () => {
-    const result = parseTaskScript(effectiveScript, tasks);
+  const compileScript = (script: string, existing: Task[]) => {
+    const result = parseTaskScript(script, existing);
     setErrors(result.errors);
 
     if (result.errors.length > 0) {
@@ -109,9 +121,40 @@ const SetupPage: React.FC<SetupPageProps> = ({
     );
   };
 
+  const handleCompile = () => compileScript(effectiveScript, tasks);
+
+  // Templates and other weeks' scripts replace this week's script and hours, then compile right away
+  const handleLoadScript = (script: string, availabilityToLoad: string, description: string) => {
+    const replacing = effectiveScript.trim() !== '' || schedule !== null;
+    if (replacing && !window.confirm(`Replace this week's script${schedule ? ' and schedule' : ''} with ${description}?`)) return;
+    onScriptChange(script);
+    onAvailabilityChange(availabilityToLoad);
+    compileScript(script, []);
+  };
+
+  const copySources: WeekSource[] = useMemo(
+    () =>
+      Object.keys(weeks)
+        .filter(key => key !== weekKey && hasContent(weeks[key]) && dateFromKey(key))
+        .sort()
+        .reverse()
+        .map(key => {
+          const plan = weeks[key];
+          const count = plan.tasks.length;
+          return {
+            key,
+            label: formatWeekRange(dateFromKey(key) as Date),
+            detail: count > 0 ? `${count} task${count !== 1 ? 's' : ''}` : 'not compiled',
+            script: planScript(plan),
+            availability: plan.availability,
+          };
+        }),
+    [weeks, weekKey]
+  );
+
   const handleGenerateSchedule = () => {
     setCalendarNotice(null);
-    onScheduleUpdate(scheduleWeek(tasks, availability));
+    onScheduleUpdate(scheduleWeek(tasks, availability, weekStart));
   };
 
   // Discards manual edits and returns to the scheduler's proposal
@@ -202,7 +245,7 @@ const SetupPage: React.FC<SetupPageProps> = ({
   const commitBlocks = (blocks: ScheduleBlock[]) => {
     const anchorHours = blocks.filter(b => b.blockType === 'anchor').reduce((sum, b) => sum + b.durationMinutes, 0) / 60;
     onScheduleUpdate({
-      weekStartDate: schedule?.weekStartDate ?? planningWeekStart(new Date()),
+      weekStartDate: weekStart,
       blocks,
       totalAvailableHours: availableHours,
       totalAnchorHours: anchorHours,
@@ -291,7 +334,8 @@ const SetupPage: React.FC<SetupPageProps> = ({
   return (
     <Container fluid className="fade-in">
       <h1 className="page-title">Setup Your Tasks</h1>
-      <WeekBanner weekStart={weekStart} />
+      <WeekPicker weekStart={weekStart} onSelect={onSelectWeek} />
+      <WeekBanner weekStart={weekStart} showNote={false} />
 
       <Row>
         <Col lg={5} className="mb-4">
@@ -308,6 +352,14 @@ const SetupPage: React.FC<SetupPageProps> = ({
                   {showSyntax ? 'Hide Syntax' : 'Syntax'}
                 </Button>
               </div>
+              <ScriptLibrary
+                templates={templates}
+                sources={copySources}
+                canSave={effectiveScript.trim() !== ''}
+                onLoad={handleLoadScript}
+                onSave={name => onSaveTemplate(name, effectiveScript, availabilityText)}
+                onDelete={onDeleteTemplate}
+              />
               {showSyntax && <pre className="script-syntax-help">{SYNTAX_HELP}</pre>}
               <Form.Control
                 as="textarea"
@@ -390,6 +442,11 @@ const SetupPage: React.FC<SetupPageProps> = ({
                         {unplacedCount} item{unplacedCount !== 1 ? 's' : ''} still in the candidate lane won't be executed.
                       </small>
                     )}
+                    {!isCurrentWeek && (
+                      <small className="text-muted me-auto">
+                        Saved automatically. Execute follows the current week, so this plan runs once its week begins.
+                      </small>
+                    )}
                     <Button
                       variant="outline-secondary"
                       className="btn-stoic"
@@ -400,7 +457,8 @@ const SetupPage: React.FC<SetupPageProps> = ({
                     <Button
                       className="btn-stoic"
                       onClick={() => onNavigate('execution')}
-                      disabled={schedule.blocks.length === 0}
+                      disabled={schedule.blocks.length === 0 || !isCurrentWeek}
+                      title={isCurrentWeek ? undefined : 'Execute follows the current week'}
                     >
                       Confirmed
                     </Button>

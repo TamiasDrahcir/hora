@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Navbar, Button, Modal } from 'react-bootstrap';
-import type { AppState, ScheduleBlock, Task } from './types';
-import { getWeekStartDate } from './utils';
-import { DEFAULT_AVAILABILITY } from './availability';
+import { v4 as uuidv4 } from 'uuid';
+import type { AppState, ScheduleBlock, ScriptTemplate, Task, WeekPlan, WeeklySchedule } from './types';
+import { weekKeyOf } from './utils';
 import { useBlockNotifications } from './notifications';
+import { planFor, restoreState } from './weekPlans';
 import SetupPage from './pages/SetupPage';
 import ExecutionPage from './pages/ExecutionPage';
 import ReportPage from './pages/ReportPage';
@@ -12,12 +13,11 @@ import './App.css';
 const App: React.FC = () => {
   const [theme, setTheme] = useState<'stoic' | 'tech'>('stoic');
   const [appState, setAppState] = useState<AppState>({
-    tasks: [],
-    schedule: null,
+    weeks: {},
+    selectedWeek: weekKeyOf(),
+    templates: [],
     report: null,
     currentView: 'setup',
-    availability: DEFAULT_AVAILABILITY,
-    currentWeekStartDate: getWeekStartDate(),
   });
   const [showHelp, setShowHelp] = useState(false);
   // Guards against persisting the initial empty state before localStorage has been read
@@ -30,15 +30,7 @@ const App: React.FC = () => {
     
     if (savedState) {
       try {
-        // discordWebhook is a leftover from a removed feature and was a secret, so drop it from storage
-        const { discordWebhook: _legacyWebhook, ...saved } = JSON.parse(savedState);
-        setAppState(prev => ({
-          ...prev,
-          ...saved,
-          // The Schedule view no longer exists; older saved state may still point at it
-          currentView: saved.currentView === 'schedule' ? 'setup' : saved.currentView,
-          currentWeekStartDate: new Date(saved.currentWeekStartDate),
-        }));
+        setAppState(prev => ({ ...prev, ...restoreState(JSON.parse(savedState)) }));
       } catch (e) {
         console.error('Failed to load saved state', e);
       }
@@ -70,20 +62,40 @@ const App: React.FC = () => {
     setAppState(prev => ({ ...prev, ...updates }));
   };
 
-  const handleTasksUpdate = (tasks: Task[]) => {
-    updateAppState({ tasks });
+  // Setup edits the selected week; Execute and Report always work on the current week
+  const currentWeek = weekKeyOf(new Date());
+  const selectedPlan = planFor(appState.weeks, appState.selectedWeek);
+  const currentPlan = planFor(appState.weeks, currentWeek);
+
+  const updatePlan = (week: string, updates: Partial<WeekPlan>) => {
+    setAppState(prev => ({
+      ...prev,
+      weeks: { ...prev.weeks, [week]: { ...planFor(prev.weeks, week), ...updates } },
+    }));
   };
 
-  const handleScheduleUpdate = (schedule: any) => {
-    updateAppState({ schedule });
+  const updateSelectedPlan = (updates: Partial<WeekPlan>) => updatePlan(appState.selectedWeek, updates);
+
+  const handleTasksUpdate = (tasks: Task[]) => updateSelectedPlan({ tasks });
+  const handleScheduleUpdate = (schedule: WeeklySchedule | null) => updateSelectedPlan({ schedule });
+  const handleScriptChange = (scriptText: string) => updateSelectedPlan({ scriptText });
+  const handleAvailabilityChange = (availability: string) => updateSelectedPlan({ availability });
+
+  const handleSelectWeek = (selectedWeek: string) => updateAppState({ selectedWeek });
+
+  const handleSaveTemplate = (name: string, scriptText: string, availability: string) => {
+    setAppState(prev => {
+      const existing = prev.templates.find(t => t.name.toLowerCase() === name.toLowerCase());
+      const template: ScriptTemplate = { id: existing?.id ?? uuidv4(), name, scriptText, availability };
+      return {
+        ...prev,
+        templates: existing ? prev.templates.map(t => (t.id === existing.id ? template : t)) : [...prev.templates, template],
+      };
+    });
   };
 
-  const handleScriptChange = (scriptText: string) => {
-    updateAppState({ scriptText });
-  };
-
-  const handleAvailabilityChange = (availability: string) => {
-    updateAppState({ availability });
+  const handleDeleteTemplate = (id: string) => {
+    setAppState(prev => ({ ...prev, templates: prev.templates.filter(t => t.id !== id) }));
   };
 
   const handleNotificationsChange = (notificationsEnabled: boolean) => {
@@ -95,7 +107,7 @@ const App: React.FC = () => {
   };
 
   // Alerts fire whichever page is open; waiting for hydration avoids acting on the empty initial state
-  useBlockNotifications(appState.schedule, hydrated && !!appState.notificationsEnabled, () => handleNavigate('execution'));
+  useBlockNotifications(currentPlan.schedule, hydrated && !!appState.notificationsEnabled, () => handleNavigate('execution'));
 
   // An earlier version registered a service worker and a push subscription; remove them so nothing lingers
   useEffect(() => {
@@ -117,12 +129,19 @@ const App: React.FC = () => {
 
   const handleBlockUpdate = (blockId: string, updates: Partial<ScheduleBlock>) => {
     setAppState(prev => {
-      if (!prev.schedule) return prev;
+      const plan = prev.weeks[currentWeek];
+      if (!plan?.schedule) return prev;
       return {
         ...prev,
-        schedule: {
-          ...prev.schedule,
-          blocks: prev.schedule.blocks.map(block => (block.id === blockId ? { ...block, ...updates } : block)),
+        weeks: {
+          ...prev.weeks,
+          [currentWeek]: {
+            ...plan,
+            schedule: {
+              ...plan.schedule,
+              blocks: plan.schedule.blocks.map(block => (block.id === blockId ? { ...block, ...updates } : block)),
+            },
+          },
         },
       };
     });
@@ -133,25 +152,32 @@ const App: React.FC = () => {
       case 'setup':
         return (
           <SetupPage
-            tasks={appState.tasks}
-            scriptText={appState.scriptText || ''}
-            schedule={appState.schedule}
-            availability={appState.availability}
+            key={appState.selectedWeek}
+            weekKey={appState.selectedWeek}
+            weeks={appState.weeks}
+            templates={appState.templates}
+            tasks={selectedPlan.tasks}
+            scriptText={selectedPlan.scriptText || ''}
+            schedule={selectedPlan.schedule}
+            availability={selectedPlan.availability}
             notificationsEnabled={!!appState.notificationsEnabled}
             onTasksUpdate={handleTasksUpdate}
             onScriptChange={handleScriptChange}
             onAvailabilityChange={handleAvailabilityChange}
             onNotificationsChange={handleNotificationsChange}
             onScheduleUpdate={handleScheduleUpdate}
+            onSelectWeek={handleSelectWeek}
+            onSaveTemplate={handleSaveTemplate}
+            onDeleteTemplate={handleDeleteTemplate}
             onNavigate={handleNavigate}
           />
         );
       case 'execution':
         return (
           <ExecutionPage
-            schedule={appState.schedule}
-            tasks={appState.tasks}
-            availability={appState.availability}
+            schedule={currentPlan.schedule}
+            tasks={currentPlan.tasks}
+            availability={currentPlan.availability}
             notificationsEnabled={!!appState.notificationsEnabled}
             onNotificationsChange={handleNotificationsChange}
             onBlockUpdate={handleBlockUpdate}
@@ -161,8 +187,8 @@ const App: React.FC = () => {
       case 'report':
         return (
           <ReportPage
-            schedule={appState.schedule}
-            tasks={appState.tasks}
+            schedule={currentPlan.schedule}
+            tasks={currentPlan.tasks}
             onNavigate={handleNavigate}
           />
         );
@@ -170,6 +196,7 @@ const App: React.FC = () => {
         return null;
     }
   };
+
 
   return (
     <div className={`container-app ${theme === 'tech' ? 'slide-in' : 'fade-in'}`}>
@@ -216,7 +243,7 @@ const App: React.FC = () => {
           size="sm"
           className="me-2 btn-stoic"
           onClick={() => handleNavigate('execution')}
-          disabled={!appState.schedule}
+          disabled={!currentPlan.schedule}
         >
           Execute
         </Button>
@@ -225,7 +252,7 @@ const App: React.FC = () => {
           size="sm"
           className="btn-stoic"
           onClick={() => handleNavigate('report')}
-          disabled={!appState.schedule}
+          disabled={!currentPlan.schedule}
         >
           Report
         </Button>
@@ -240,8 +267,8 @@ const App: React.FC = () => {
         <Modal.Body>
           <h6>Getting Started</h6>
           <ol>
-            <li><strong>Setup:</strong> Write your tasks in the task script, hit Compile, then Generate Schedule to see proposed times for each subobjective on the calendar</li>
-            <li><strong>Execute:</strong> Complete, mothball or abandon each task block as the week unfolds</li>
+            <li><strong>Setup:</strong> Pick the week to plan (any week, past or future), write its tasks in the task script, hit Compile, then Generate Schedule to see proposed times for each subobjective on the calendar. Each week has its own script and available hours; copy a script from another week or save one as a template to reuse it</li>
+            <li><strong>Execute:</strong> Complete, mothball or abandon each task block as the current week unfolds</li>
             <li><strong>Report:</strong> View your weekly performance metrics and balance</li>
           </ol>
           
