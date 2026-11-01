@@ -132,7 +132,7 @@ body.tech-theme .page-title {
 }
 
 .priority-water {
-  color: #4169e1;
+  color: #1b2b5e;
   font-weight: bold;
 }
 
@@ -142,7 +142,7 @@ body.tech-theme .page-title {
 }
 
 .priority-air {
-  color: #144e5a;
+  color: #4169e1;
   font-weight: bold;
 }
 
@@ -344,9 +344,9 @@ body.tech-theme .modal-content {
 }
 
 .time-grid-block[data-priority='earth'] { background-color: #cc7722; }
-.time-grid-block[data-priority='water'] { background-color: #4169e1; }
+.time-grid-block[data-priority='water'] { background-color: #1b2b5e; }
 .time-grid-block[data-priority='fire']  { background-color: #ff6347; }
-.time-grid-block[data-priority='air']   { background-color: #144e5a; }
+.time-grid-block[data-priority='air']   { background-color: #4169e1; }
 
 .time-grid-block-heading {
   display: flex;
@@ -433,9 +433,9 @@ body.tech-theme .modal-content {
 }
 
 .candidate-block[data-priority='earth'] { border-left-color: #cc7722; }
-.candidate-block[data-priority='water'] { border-left-color: #4169e1; }
+.candidate-block[data-priority='water'] { border-left-color: #1b2b5e; }
 .candidate-block[data-priority='fire']  { border-left-color: #ff6347; }
-.candidate-block[data-priority='air']   { border-left-color: #144e5a; }
+.candidate-block[data-priority='air']   { border-left-color: #4169e1; }
 
 @media (max-width: 991px) {
   .calendar-with-lane {
@@ -473,8 +473,8 @@ body.tech-theme .modal-content {
   border: 1px solid rgba(107, 83, 68, 0.35);
 }
 
-.candidate-block[data-priority='water'] .candidate-sub-block { background-color: rgba(65, 105, 225, 0.15); border-color: rgba(65, 105, 225, 0.45); }
-.candidate-block[data-priority='air'] .candidate-sub-block { background-color: rgba(20, 78, 90, 0.15); border-color: rgba(20, 78, 90, 0.45); }
+.candidate-block[data-priority='water'] .candidate-sub-block { background-color: rgba(27, 43, 94, 0.15); border-color: rgba(27, 43, 94, 0.45); }
+.candidate-block[data-priority='air'] .candidate-sub-block { background-color: rgba(65, 105, 225, 0.15); border-color: rgba(65, 105, 225, 0.45); }
 
 .candidate-sub-block.buffer {
   background-color: transparent !important;
@@ -573,7 +573,7 @@ body.tech-theme .modal-content {
   white-space: pre-wrap;
 }
 
-/* The Air teal is too dark to read as text on the Tech theme's navy cards */
-body.tech-theme .priority-air {
-  color: #4fb3c4;
+/* The Water navy is too dark to read as text on the Tech theme's navy cards */
+body.tech-theme .priority-water {
+  color: #7f9cf5;
 }
