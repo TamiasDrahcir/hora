@@ -87,6 +87,8 @@ const SetupPage: React.FC<SetupPageProps> = ({
   const [summary, setSummary] = useState<string | null>(null);
   const [showSyntax, setShowSyntax] = useState(false);
   const [calendarNotice, setCalendarNotice] = useState<string | null>(null);
+  // The schedule that was confirmed for a week other than the current one; any later edit replaces the schedule object
+  const [confirmedSchedule, setConfirmedSchedule] = useState<WeeklySchedule | null>(null);
 
   // An invalid availability entry falls back to the default so the calendar and scheduler stay usable
   const resolvedAvailability = useMemo(() => resolveAvailability(availabilityText), [availabilityText]);
@@ -434,6 +436,11 @@ const SetupPage: React.FC<SetupPageProps> = ({
                 />
               </div>
               {calendarNotice && <div className="script-errors mt-2">{calendarNotice}</div>}
+              {schedule && confirmedSchedule === schedule && !isCurrentWeek && (
+                <div className="script-summary mt-2">
+                  Confirmed. The week of {formatWeekRange(weekStart)} will appear on Execute once it begins.
+                </div>
+              )}
               <div className="d-flex justify-content-end align-items-center gap-2 mt-3">
                 {schedule ? (
                   <>
@@ -454,11 +461,16 @@ const SetupPage: React.FC<SetupPageProps> = ({
                     >
                       Reset to Proposed
                     </Button>
+                    {schedule.blocks.length === 0 && (
+                      <small className="text-muted me-auto">Nothing is scheduled yet. Place a task on the calendar to confirm.</small>
+                    )}
                     <Button
                       className="btn-stoic"
-                      onClick={() => onNavigate('execution')}
-                      disabled={schedule.blocks.length === 0 || !isCurrentWeek}
-                      title={isCurrentWeek ? undefined : 'Execute follows the current week'}
+                      onClick={() => {
+                        if (isCurrentWeek) onNavigate('execution');
+                        else setConfirmedSchedule(schedule);
+                      }}
+                      disabled={schedule.blocks.length === 0}
                     >
                       Confirmed
                     </Button>
