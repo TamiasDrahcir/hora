@@ -97,7 +97,7 @@ const App: React.FC = () => {
   // Alerts fire whichever page is open; waiting for hydration avoids acting on the empty initial state
   const notificationsOn = hydrated && !!appState.notificationsEnabled;
   useBlockNotifications(appState.schedule, notificationsOn, () => handleNavigate('execution'));
-  const pushStatus = usePushSync(appState.schedule, notificationsOn);
+  const push = usePushSync(appState.schedule, notificationsOn);
 
   // Clicking a push notification lands here: via a message when HORA is open, or ?view=execution when it opened fresh
   useEffect(() => {
@@ -139,7 +139,7 @@ const App: React.FC = () => {
             schedule={appState.schedule}
             availability={appState.availability}
             notificationsEnabled={!!appState.notificationsEnabled}
-            pushStatus={pushStatus}
+            push={push}
             onTasksUpdate={handleTasksUpdate}
             onScriptChange={handleScriptChange}
             onAvailabilityChange={handleAvailabilityChange}
@@ -155,7 +155,7 @@ const App: React.FC = () => {
             tasks={appState.tasks}
             availability={appState.availability}
             notificationsEnabled={!!appState.notificationsEnabled}
-            pushStatus={pushStatus}
+            push={push}
             onNotificationsChange={handleNotificationsChange}
             onBlockUpdate={handleBlockUpdate}
             onNavigate={handleNavigate}

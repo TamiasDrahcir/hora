@@ -9,7 +9,7 @@ import { resolveAvailability, totalAvailabilityHours, DEFAULT_AVAILABILITY } fro
 import { planningWeekStart } from '../revenue';
 import TimeGridCalendar from '../components/TimeGridCalendar';
 import NotificationSettings from '../components/NotificationSettings';
-import type { PushStatus } from '../push';
+import type { PushState } from '../push';
 
 interface SetupPageProps {
   tasks: Task[];
@@ -17,7 +17,7 @@ interface SetupPageProps {
   schedule: WeeklySchedule | null;
   availability: string;
   notificationsEnabled: boolean;
-  pushStatus: PushStatus;
+  push: PushState;
   onTasksUpdate: (tasks: Task[]) => void;
   onScriptChange: (script: string) => void;
   onAvailabilityChange: (availability: string) => void;
@@ -61,7 +61,7 @@ const SetupPage: React.FC<SetupPageProps> = ({
   schedule,
   availability: availabilityText,
   notificationsEnabled,
-  pushStatus,
+  push,
   onTasksUpdate,
   onScriptChange,
   onAvailabilityChange,
@@ -321,7 +321,7 @@ const SetupPage: React.FC<SetupPageProps> = ({
             <Card.Body className="d-flex flex-column">
               <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                 <h6 className="mb-0">Weekly Calendar</h6>
-                <NotificationSettings enabled={notificationsEnabled} pushStatus={pushStatus} onChange={onNotificationsChange} />
+                <NotificationSettings enabled={notificationsEnabled} push={push} onChange={onNotificationsChange} />
               </div>
               <div className="availability-config mb-2">
                 <div className="d-flex align-items-center gap-2">

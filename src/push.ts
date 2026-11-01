@@ -10,10 +10,50 @@ import { planningWeekStart } from './revenue';
 const API_URL = ((import.meta.env.VITE_PUSH_API_URL as string | undefined) || '').replace(/\/+$/, '');
 const VAPID_PUBLIC_KEY = (import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined) || '';
 const SYNC_DEBOUNCE_MS = 1500;
+const SUBSCRIBE_TIMEOUT_MS = 20_000;
+
+// Some embedded browsers never settle a service-worker registration; fail loudly instead of hanging
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const error = new Error(`no response after ${ms / 1000}s`);
+      error.name = 'TimeoutError';
+      reject(error);
+    }, ms);
+    promise.then(
+      value => { clearTimeout(timer); resolve(value); },
+      error => { clearTimeout(timer); reject(error); }
+    );
+  });
+}
 
 export type PushStatus = 'off' | 'unconfigured' | 'unsupported' | 'syncing' | 'ready' | 'error';
 
+export interface PushState {
+  status: PushStatus;
+  error: string | null; // plain-language reason when status is 'error'
+}
+
 export const pushConfigured = Boolean(API_URL && VAPID_PUBLIC_KEY);
+
+// Turns a browser or network failure into something a person can act on
+export function describePushError(error: unknown): string {
+  const name = error instanceof Error ? error.name : '';
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (name === 'AbortError') {
+    return `Your browser couldn't reach its push service (${message}). Some browsers, such as Brave, have push messaging switched off in their privacy settings.`;
+  }
+  if (name === 'NotAllowedError') return 'The browser refused notifications for this site. Allow them in the site settings.';
+  if (name === 'TimeoutError') {
+    return `The browser didn't respond while setting up push (${message}). Embedded browsers, such as the VS Code preview, can't run service workers. Open HORA in Edge, Chrome or Firefox.`;
+  }
+  if (name === 'InvalidStateError') return `The browser's push subscription is in a bad state (${message}). Try turning Notifications off and on again.`;
+  if (name === 'TypeError') {
+    return `Couldn't reach the push worker (${message}). A privacy extension, VPN or network filter may be blocking ${new URL(API_URL).host}.`;
+  }
+  return `${name ? `${name}: ` : ''}${message}`;
+}
 
 export function pushSupported(): boolean {
   return typeof navigator !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window;
@@ -74,42 +114,44 @@ export async function unsubscribePush(): Promise<void> {
 }
 
 // Keeps the push worker's copy of your upcoming alerts in step with the schedule
-export function usePushSync(schedule: WeeklySchedule | null, enabled: boolean): PushStatus {
-  const [status, setStatus] = useState<PushStatus>('off');
+export function usePushSync(schedule: WeeklySchedule | null, enabled: boolean): PushState {
+  const [state, setState] = useState<PushState>({ status: 'off', error: null });
 
   useEffect(() => {
+    const set = (status: PushStatus, error: string | null = null) => setState({ status, error });
+
     if (!enabled) {
-      setStatus('off');
+      set('off');
       return;
     }
     if (!pushConfigured) {
-      setStatus('unconfigured');
+      set('unconfigured');
       return;
     }
     if (!pushSupported()) {
-      setStatus('unsupported');
+      set('unsupported');
       return;
     }
     if (notificationPermission() !== 'granted') {
-      setStatus('off');
+      set('off');
       return;
     }
 
     let cancelled = false;
-    setStatus('syncing');
+    set('syncing');
 
     // Debounced so a burst of edits (e.g. dragging blocks) sends one sync
     const timer = setTimeout(async () => {
       try {
-        const subscription = await subscribePush();
+        const subscription = await withTimeout(subscribePush(), SUBSCRIBE_TIMEOUT_MS);
         const reminders = schedule
           ? buildUpcomingReminders(schedule.blocks, planningWeekStart(new Date(schedule.weekStartDate)), new Date())
           : [];
         await syncReminders(subscription, reminders);
-        if (!cancelled) setStatus('ready');
+        if (!cancelled) set('ready');
       } catch (error) {
         console.error('Push sync failed', error);
-        if (!cancelled) setStatus('error');
+        if (!cancelled) set('error', describePushError(error));
       }
     }, SYNC_DEBOUNCE_MS);
 
@@ -119,5 +161,5 @@ export function usePushSync(schedule: WeeklySchedule | null, enabled: boolean): 
     };
   }, [schedule, enabled]);
 
-  return status;
+  return state;
 }
