@@ -17,6 +17,7 @@ interface SetupPageProps {
   onScriptChange: (script: string) => void;
   onAvailabilityChange: (availability: string) => void;
   onScheduleUpdate: (schedule: WeeklySchedule | null) => void;
+  onNavigate: (view: string) => void;
 }
 
 const SCRIPT_PLACEHOLDER = `# One block per task. Example:
@@ -42,6 +43,9 @@ Flexible task body:
 Rigid task body (fixed timeslots):
   {<days>}<start>-<end>        e.g. {MWF}1020-1110
 
+Any task:
+  DESC: <text>                 optional note shown when hovering a block
+
 Days: M T W R F S U (Mon..Sun)   Times: military (e.g. 2230)
 Lines starting with # are comments.`;
 
@@ -54,6 +58,7 @@ const SetupPage: React.FC<SetupPageProps> = ({
   onScriptChange,
   onAvailabilityChange,
   onScheduleUpdate,
+  onNavigate,
 }) => {
   const [errors, setErrors] = useState<ScriptError[]>([]);
   const [summary, setSummary] = useState<string | null>(null);
@@ -96,6 +101,9 @@ const SetupPage: React.FC<SetupPageProps> = ({
     setCalendarNotice(null);
     onScheduleUpdate(scheduleWeek(tasks, availability));
   };
+
+  // Discards manual edits and returns to the scheduler's proposal
+  const handleResetToProposed = handleGenerateSchedule;
 
   // Before generating, only rigid timeslots are on the calendar; afterwards it shows the proposed schedule
   const rigidBlocks: ScheduleBlock[] = useMemo(() => {
@@ -171,6 +179,12 @@ const SetupPage: React.FC<SetupPageProps> = ({
   }, [tasks, schedule]);
 
   const currentBlocks = schedule ? schedule.blocks : rigidBlocks;
+
+  // Anything left in the lane after scheduling would be left out of execution
+  const unplacedCount = candidateBlocks.reduce(
+    (sum, block) => sum + (block.subItems && block.subItems.length > 0 ? block.subItems.filter(s => !s.isBuffer).length : 1),
+    0
+  );
 
   // Manual edits turn the current calendar into the schedule, so drags work before generating too
   const commitBlocks = (blocks: ScheduleBlock[]) => {
@@ -324,6 +338,7 @@ const SetupPage: React.FC<SetupPageProps> = ({
                 <TimeGridCalendar
                   blocks={currentBlocks}
                   candidateBlocks={candidateBlocks}
+                  tasks={tasks}
                   availability={availability}
                   editable
                   showCandidateLane
@@ -333,14 +348,38 @@ const SetupPage: React.FC<SetupPageProps> = ({
                 />
               </div>
               {calendarNotice && <div className="script-errors mt-2">{calendarNotice}</div>}
-              <div className="d-flex justify-content-end mt-3">
-                <Button
-                  className="btn-stoic"
-                  onClick={handleGenerateSchedule}
-                  disabled={tasks.length === 0}
-                >
-                  Generate Schedule
-                </Button>
+              <div className="d-flex justify-content-end align-items-center gap-2 mt-3">
+                {schedule ? (
+                  <>
+                    {unplacedCount > 0 && (
+                      <small className="text-muted me-auto">
+                        {unplacedCount} item{unplacedCount !== 1 ? 's' : ''} still in the candidate lane won't be executed.
+                      </small>
+                    )}
+                    <Button
+                      variant="outline-secondary"
+                      className="btn-stoic"
+                      onClick={handleResetToProposed}
+                    >
+                      Reset to Proposed
+                    </Button>
+                    <Button
+                      className="btn-stoic"
+                      onClick={() => onNavigate('execution')}
+                      disabled={schedule.blocks.length === 0}
+                    >
+                      Confirmed
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    className="btn-stoic"
+                    onClick={handleGenerateSchedule}
+                    disabled={tasks.length === 0}
+                  >
+                    Generate Schedule
+                  </Button>
+                )}
               </div>
             </Card.Body>
           </Card>

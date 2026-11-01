@@ -47,6 +47,7 @@ const LETTER_BY_DAY: Record<string, string> = Object.fromEntries(
 const HEADER_RE = /^(.*\S)\s*\(\s*([A-Za-z0-9]{1,7})\s*-\s*([A-Za-z0-9]{1,4})\s*\)\s*(.*)$/;
 const RIGID_RE = /^\{([MTWRFSU]+)\}\s*(\d{3,4}\s*-\s*\d{3,4})$/;
 const REQ_RE = /^REQ\s+(\d+(?:\.\d+)?)(?:\s+BY\s+([MTWRFSU])(\d{4}))?\s*$/i;
+const DESC_RE = /^DESC\s*:\s*(.+)$/i;
 const SUBOBJ_RE = /^(.*\S)\s*:\s*(\d+(?:\.\d+)?)\s*$/;
 const DATE_RE = /^\d{6}$/;
 
@@ -57,6 +58,7 @@ interface DraftTask {
   important: boolean;
   recurring: boolean;
   recurrenceEnd?: string;
+  description?: string;
   req?: number;
   deadlineDay?: string;
   deadlineTime?: string;
@@ -120,6 +122,7 @@ export function parseTaskScript(script: string, existingTasks: Task[] = []): Par
         hoursRequired: 0,
         deadline: '',
         priority: d.important ? 'earth' : 'fire',
+        description: d.description,
         objectives: [],
         completed: prev?.completed || false,
         recurring: d.recurring,
@@ -178,6 +181,7 @@ export function parseTaskScript(script: string, existingTasks: Task[] = []): Par
       hoursRequired: req,
       deadline: `${deadlineDay} ${deadlineTime}`,
       priority: d.important ? 'water' : 'air',
+      description: d.description,
       objectives,
       completed: prev?.completed || false,
       recurring: d.recurring,
@@ -268,6 +272,13 @@ export function parseTaskScript(script: string, existingTasks: Task[] = []): Par
       return;
     }
 
+    // Description line?
+    const desc = line.match(DESC_RE);
+    if (desc) {
+      draft.description = desc[1].trim();
+      return;
+    }
+
     // Subobjective line?
     const sub = line.match(SUBOBJ_RE);
     if (sub) {
@@ -296,6 +307,7 @@ export function tasksToScript(tasks: Task[]): string {
     else if (task.recurring) flags.push('*');
 
     const lines = [`${task.name} (${task.code})${flags.length ? ' ' + flags.join(' ') : ''}`];
+    if (task.description) lines.push(`DESC: ${task.description}`);
 
     if (isRigid(task.priority)) {
       // Group timeslots sharing the same interval, days in MTWRFSU order

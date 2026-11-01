@@ -514,3 +514,61 @@ body.tech-theme .modal-content {
   font-family: 'Consolas', 'Courier New', monospace;
   font-size: 0.8rem;
 }
+
+/* ===== Calendar hover tooltip ===== */
+.time-grid-tooltip {
+  position: fixed;
+  z-index: 2000;
+  width: 270px;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--stoic-text);
+  background-color: #fff;
+  border: 1px solid var(--stoic-border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+
+.tech-theme .time-grid-tooltip {
+  color: var(--tech-text);
+  background-color: #0d1230;
+  border-color: var(--tech-border);
+  box-shadow: 0 6px 18px rgba(0, 255, 65, 0.15);
+}
+
+.time-grid-tooltip-title {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--stoic-border);
+}
+
+.time-grid-tooltip-title strong {
+  font-size: 0.85rem;
+}
+
+.time-grid-tooltip dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.6rem;
+  margin: 0;
+}
+
+.time-grid-tooltip dt {
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.time-grid-tooltip dd {
+  margin: 0;
+}
+
+.time-grid-tooltip-description {
+  margin: 0.45rem 0 0;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--stoic-border);
+  white-space: pre-wrap;
+}

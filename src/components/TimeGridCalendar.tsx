@@ -1,11 +1,13 @@
-import React, { useMemo } from 'react';
-import type { ScheduleBlock } from '../types';
-import { DAYS_OF_WEEK, minutesToTime, timeToMinutes, formatDurationHours } from '../utils';
+import React, { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import type { ScheduleBlock, Task } from '../types';
+import { DAYS_OF_WEEK, minutesToTime, timeToMinutes, formatDurationHours, isRigid } from '../utils';
 import type { Availability, TimeWindow } from '../availability';
 
 interface TimeGridCalendarProps {
   blocks: ScheduleBlock[];
   candidateBlocks?: ScheduleBlock[];
+  tasks?: Task[]; // lets hovering a block show the full task specification
   availability?: Availability;
   editable?: boolean;
   showCandidateLane?: boolean;
@@ -26,6 +28,19 @@ function formatHour(minutes: number): string {
   return `${displayHour}${suffix}`;
 }
 
+const PRIORITY_LABELS: Record<string, string> = {
+  earth: 'Earth (rigid, important)',
+  water: 'Water (flexible, important)',
+  fire: 'Fire (rigid, less important)',
+  air: 'Air (flexible, less important)',
+};
+
+function formatRecurrence(task: Task): string | null {
+  if (task.recurrenceEnd) return `Weekly until ${task.recurrenceEnd}`;
+  if (task.recurring) return 'Weekly';
+  return null;
+}
+
 // Parts of [range] not covered by any availability window
 function unavailableSpans(windows: TimeWindow[], range: TimeWindow): TimeWindow[] {
   const spans: TimeWindow[] = [];
@@ -41,6 +56,7 @@ function unavailableSpans(windows: TimeWindow[], range: TimeWindow): TimeWindow[
 const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
   blocks,
   candidateBlocks = [],
+  tasks = [],
   availability,
   editable = false,
   showCandidateLane = false,
@@ -49,6 +65,8 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
   onRemoveBlock,
   onBlockCompletion,
 }) => {
+  const [hover, setHover] = useState<{ block: ScheduleBlock; x: number; y: number } | null>(null);
+
   // The visible hours follow availability, widened to keep every placed block in view
   const range = useMemo<TimeWindow>(() => {
     const starts: number[] = [];
@@ -75,6 +93,62 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
   }, [range]);
 
   const canEditBlock = (block: ScheduleBlock) => editable && block.blockType === 'anchor';
+
+  // Use the latest copy of the hovered block so the tooltip vanishes if it is moved away or removed
+  const hovered = hover ? blocks.find(item => item.id === hover.block.id) : undefined;
+
+  const renderTooltip = (block: ScheduleBlock, x: number, y: number) => {
+    const task = tasks.find(item => item.id === block.taskId);
+    const rigid = isRigid(block.priority);
+    const description = task?.description || block.description;
+    const recurrence = task ? formatRecurrence(task) : null;
+
+    const rows: Array<[string, string]> = [
+      ['When', `${block.dayOfWeek} ${block.startTime} - ${block.endTime}`],
+      ['Length', `${block.durationMinutes} min (${formatDurationHours(block.durationMinutes)})`],
+      ['Type', PRIORITY_LABELS[block.priority] || block.priority],
+    ];
+    if (block.objectiveName) {
+      const objective = task?.objectives.find(item => item.id === block.objectiveId);
+      rows.push(['Subobjective', `${block.objectiveName}${objective ? ` (${objective.hoursRequired}h)` : ''}`]);
+    }
+    if (!rigid && task) {
+      rows.push(['Task total', `${task.hoursRequired}h`]);
+      if (task.deadline) rows.push(['Deadline', task.deadline]);
+    }
+    if (recurrence) rows.push(['Repeats', recurrence]);
+    if (block.completed) rows.push(['Status', 'Completed']);
+
+    // Keep the tooltip on screen: flip left/up when near the right/bottom edges
+    const flipX = x > window.innerWidth - 300;
+    const flipY = y > window.innerHeight * 0.6;
+
+    return (
+      <div
+        className="time-grid-tooltip"
+        role="tooltip"
+        style={{
+          left: flipX ? x - 14 : x + 14,
+          top: flipY ? y - 14 : y + 14,
+          transform: `translate(${flipX ? '-100%' : '0'}, ${flipY ? '-100%' : '0'})`,
+        }}
+      >
+        <div className="time-grid-tooltip-title">
+          <strong>{block.objectiveCode || block.taskCode}</strong>
+          <span>{block.taskName}</span>
+        </div>
+        <dl>
+          {rows.map(([label, value]) => (
+            <React.Fragment key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </React.Fragment>
+          ))}
+        </dl>
+        {description && <p className="time-grid-tooltip-description">{description}</p>}
+      </div>
+    );
+  };
 
   const clampStart = (start: number, duration: number): number =>
     Math.max(range.start, Math.min(start, range.end - duration));
@@ -154,10 +228,14 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
                         key={block.id}
                         draggable={movable}
                         onDragStart={movable ? event => {
+                          setHover(null);
                           const rect = event.currentTarget.getBoundingClientRect();
                           event.dataTransfer.setData('blockId', block.id);
                           event.dataTransfer.setData('grabOffset', String(((event.clientY - rect.top) / HOUR_HEIGHT) * 60));
                         } : undefined}
+                        onMouseEnter={event => setHover({ block, x: event.clientX, y: event.clientY })}
+                        onMouseMove={event => setHover({ block, x: event.clientX, y: event.clientY })}
+                        onMouseLeave={() => setHover(null)}
                         className={`time-grid-block ${block.completed ? 'completed' : ''} ${movable ? 'movable' : ''}`}
                         style={{ top: `${top}px`, height: `${height}px` }}
                         data-priority={block.priority}
@@ -244,6 +322,7 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
           </div>
         </section>
       )}
+      {hovered && hover && createPortal(renderTooltip(hovered, hover.x, hover.y), document.body)}
     </>
   );
 };

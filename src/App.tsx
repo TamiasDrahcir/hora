@@ -118,6 +118,7 @@ const App: React.FC = () => {
             onScriptChange={handleScriptChange}
             onAvailabilityChange={handleAvailabilityChange}
             onScheduleUpdate={handleScheduleUpdate}
+            onNavigate={handleNavigate}
           />
         );
       case 'execution':
