@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Container, Navbar, Button, Modal } from 'react-bootstrap';
 import { v4 as uuidv4 } from 'uuid';
 import type { AppState, ScheduleBlock, ScriptTemplate, Task, WeekPlan, WeeklySchedule } from './types';
-import { weekKeyOf } from './utils';
+import { weekKeyOf, getWeekStartDate } from './utils';
 import { useBlockNotifications } from './notifications';
 import { planFor, restoreState } from './weekPlans';
+import { buildUpcomingEvents } from './calendarEvents';
+import { setSyncBatch } from './googleSync';
 import SetupPage from './pages/SetupPage';
 import ExecutionPage from './pages/ExecutionPage';
 import ReportPage from './pages/ReportPage';
@@ -108,6 +110,14 @@ const App: React.FC = () => {
 
   // Alerts fire whichever page is open; waiting for hydration avoids acting on the empty initial state
   useBlockNotifications(currentPlan.schedule, hydrated && !!appState.notificationsEnabled, () => handleNavigate('execution'));
+
+  // Google Calendar should hold the current week and any later planned weeks. Reporting it here, on every page,
+  // lets auto-sync react to a change wherever it was made. Before hydration the weeks are empty, and reporting
+  // that would look like "everything was deleted".
+  const calendarEvents = useMemo(() => buildUpcomingEvents(appState.weeks, currentWeek), [appState.weeks, currentWeek]);
+  useEffect(() => {
+    if (hydrated) setSyncBatch(calendarEvents, getWeekStartDate(new Date()));
+  }, [hydrated, calendarEvents]);
 
   // An earlier version registered a service worker and a push subscription; remove them so nothing lingers
   useEffect(() => {

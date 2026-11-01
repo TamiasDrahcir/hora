@@ -3,6 +3,7 @@
 // The user signs in with Google (Google Identity Services) and HORA writes the schedule into its own
 // secondary calendar named "HORA". The narrow calendar.app.created permission lets HORA manage only
 // calendars it created, so it can never read or change the user's other events.
+// Each sync wipes the HORA events from the current week onward and then adds the up-to-date batch.
 // Needs VITE_GOOGLE_CLIENT_ID (see docs/google-calendar.md); without it the Google button is hidden.
 
 import { REMINDER_MINUTES, type CalendarEvent } from './calendarEvents';
@@ -13,15 +14,16 @@ const SCOPE = 'https://www.googleapis.com/auth/calendar.app.created';
 const API = 'https://www.googleapis.com/calendar/v3';
 const GIS_URL = 'https://accounts.google.com/gsi/client';
 const CALENDAR_ID_KEY = 'horaGoogleCalendarId';
+const CALENDAR_NAME = 'HORA';
+const CALENDAR_DESCRIPTION = 'Schedule synced from HORA';
 const MAX_PARALLEL_REQUESTS = 5;
 
 export const googleConfigured = Boolean(CLIENT_ID);
 export const GOOGLE_CALENDAR_URL = 'https://calendar.google.com/calendar/u/0/r/week';
 
 export interface GoogleSyncResult {
-  created: number;
-  updated: number;
   deleted: number;
+  created: number;
   total: number;
 }
 
@@ -175,16 +177,39 @@ function makeCaller(initialToken: string): Call {
       current = await getAccessToken(true);
       response = await send(path, init);
     }
+    // Writing many events quickly can hit Google's rate limits; back off and retry a few times
+    for (let attempt = 0; !response.ok && attempt < RETRY_DELAYS_MS.length && (await isRetryable(response)); attempt++) {
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+      response = await send(path, init);
+    }
     if (!response.ok) throw await toError(response);
     return response.status === 204 ? null : response.json();
   };
 }
 
+const RETRY_DELAYS_MS = [500, 1000, 2000, 4000];
+
+async function isRetryable(response: Response): Promise<boolean> {
+  if (response.status === 429 || response.status >= 500) return true;
+  if (response.status !== 403) return false;
+  return /rateLimitExceeded|userRateLimitExceeded/.test(await response.clone().text().catch(() => ''));
+}
+
+// Runs the worker over the items a few at a time; after a failure nothing new is started, so a failed
+// sync can't keep writing in the background while the next one begins
 async function runLimited<T>(items: T[], worker: (item: T) => Promise<void>): Promise<void> {
   const queue = [...items];
+  let failed = false;
   await Promise.all(
     Array.from({ length: Math.min(MAX_PARALLEL_REQUESTS, queue.length) }, async () => {
-      for (let item = queue.shift(); item !== undefined; item = queue.shift()) await worker(item);
+      for (let item = queue.shift(); item !== undefined && !failed; item = queue.shift()) {
+        try {
+          await worker(item);
+        } catch (error) {
+          failed = true;
+          throw error;
+        }
+      }
     })
   );
 }
@@ -203,16 +228,8 @@ function rfc3339(date: Date): string {
   );
 }
 
-// Google event ids must be 5-1024 chars of a-v and 0-9; a hash of the block's uid keeps it stable
-async function googleEventId(uid: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(uid));
-  const hex = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
-  return `hora${hex.slice(0, 32)}`;
-}
-
-function eventPayload(id: string, event: CalendarEvent) {
+function eventPayload(event: CalendarEvent) {
   return {
-    id,
     summary: event.summary,
     description: event.description,
     start: { dateTime: rfc3339(event.start), timeZone: timeZone() },
@@ -222,8 +239,22 @@ function eventPayload(id: string, event: CalendarEvent) {
       useDefault: false,
       overrides: event.remind ? [{ method: 'popup', minutes: REMINDER_MINUTES }] : [],
     },
+    // Marks the event as HORA's, so a sync can find and remove exactly what HORA put there
     extendedProperties: { private: { hora: '1', horaWeek: event.weekKey } },
   };
+}
+
+// HORA's own calendar, found again by its description if the saved id was lost (e.g. site data cleared),
+// so a second "HORA" calendar isn't created
+async function findExistingCalendar(call: Call): Promise<string | null> {
+  try {
+    const list = (await call('/users/me/calendarList?minAccessRole=owner&fields=items(id,summary,description)')) as {
+      items?: Array<{ id: string; summary?: string; description?: string }>;
+    };
+    return list.items?.find(c => c.summary === CALENDAR_NAME && c.description === CALENDAR_DESCRIPTION)?.id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 async function ensureCalendar(call: Call): Promise<string> {
@@ -238,20 +269,28 @@ async function ensureCalendar(call: Call): Promise<string> {
     }
   }
 
+  const found = await findExistingCalendar(call);
+  if (found) {
+    localStorage.setItem(CALENDAR_ID_KEY, found);
+    return found;
+  }
+
   const created = (await call('/calendars', {
     method: 'POST',
-    body: JSON.stringify({ summary: 'HORA', description: 'Schedule synced from HORA', timeZone: timeZone() }),
+    body: JSON.stringify({ summary: CALENDAR_NAME, description: CALENDAR_DESCRIPTION, timeZone: timeZone() }),
   })) as { id: string };
   localStorage.setItem(CALENDAR_ID_KEY, created.id);
   return created.id;
 }
 
-async function listWeekEventIds(call: Call, calendarId: string, weekKey: string): Promise<string[]> {
+// Every event HORA has put on the calendar that starts at or after `from`
+async function listHoraEventIds(call: Call, calendarId: string, from: Date): Promise<string[]> {
   const ids: string[] = [];
   let pageToken = '';
   do {
     const query = new URLSearchParams({
-      privateExtendedProperty: `horaWeek=${weekKey}`,
+      privateExtendedProperty: 'hora=1',
+      timeMin: from.toISOString(),
       showDeleted: 'false',
       maxResults: '250',
       fields: 'nextPageToken,items(id)',
@@ -267,55 +306,31 @@ async function listWeekEventIds(call: Call, calendarId: string, weekKey: string)
   return ids;
 }
 
-// Makes the HORA calendar show exactly this week's events: new blocks are added, changed ones updated,
-// and events for blocks that are no longer on the schedule are removed
-export async function syncToGoogleCalendar(events: CalendarEvent[], weekKey: string): Promise<GoogleSyncResult> {
+// Replaces what HORA has on Google Calendar from `from` onward: first every HORA event from that moment
+// is deleted, and only then is the up-to-date batch added, so repeated syncs can never pile up duplicates.
+// Earlier events (past weeks) are left alone as history.
+export async function syncToGoogleCalendar(events: CalendarEvent[], from: Date): Promise<GoogleSyncResult> {
   if (!googleConfigured) throw new GoogleCalendarError('Google Calendar sync is not set up for this copy of HORA.');
 
   const call = makeCaller(await getAccessToken());
   const calendarId = await ensureCalendar(call);
   const base = `/calendars/${encodeURIComponent(calendarId)}/events`;
+  const result: GoogleSyncResult = { deleted: 0, created: 0, total: events.length };
 
-  const existing = new Set(await listWeekEventIds(call, calendarId, weekKey));
-  const desired = await Promise.all(
-    events.map(async event => {
-      const id = await googleEventId(event.uid);
-      return { id, payload: eventPayload(id, event) };
-    })
-  );
-  const wanted = new Set(desired.map(item => item.id));
-
-  const result: GoogleSyncResult = { created: 0, updated: 0, deleted: 0, total: desired.length };
-
-  await runLimited(desired, async ({ id, payload }) => {
-    const update = () => call(`${base}/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
-
-    if (existing.has(id)) {
-      await update();
-      result.updated++;
-      return;
-    }
-    try {
-      await call(base, { method: 'POST', body: JSON.stringify(payload) });
-      result.created++;
-    } catch (error) {
-      // 409: the id is taken by an event deleted earlier; updating it brings it back
-      if (error instanceof GoogleCalendarError && error.status === 409) {
-        await update();
-        result.updated++;
-      } else {
-        throw error;
-      }
-    }
-  });
-
-  await runLimited([...existing].filter(id => !wanted.has(id)), async id => {
+  // 1. Wipe. If this fails nothing is added, so a failed sync can't leave two copies behind.
+  await runLimited(await listHoraEventIds(call, calendarId, from), async id => {
     try {
       await call(`${base}/${id}`, { method: 'DELETE' });
       result.deleted++;
     } catch (error) {
       if (!(error instanceof GoogleCalendarError) || (error.status !== 404 && error.status !== 410)) throw error;
     }
+  });
+
+  // 2. Add the current batch
+  await runLimited(events, async event => {
+    await call(base, { method: 'POST', body: JSON.stringify(eventPayload(event)) });
+    result.created++;
   });
 
   return result;

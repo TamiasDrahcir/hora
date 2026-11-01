@@ -1,6 +1,6 @@
 // Turns the confirmed schedule into calendar events, for the .ics export and Google Calendar sync.
 
-import type { Priority, Task, WeeklySchedule } from './types';
+import type { Priority, Task, WeekPlan, WeeklySchedule } from './types';
 import { PRIORITY_LABELS, isRigid, localDateKey } from './utils';
 import { blockEndTime, blockStartTime, planningWeekStart } from './revenue';
 
@@ -23,6 +23,21 @@ function pad(value: number, length = 2): string {
 
 export function scheduleWeekKey(schedule: WeeklySchedule): string {
   return localDateKey(planningWeekStart(new Date(schedule.weekStartDate)));
+}
+
+// The events for the current week and every later week that has a schedule: what Google Calendar should hold
+export function buildUpcomingEvents(weeks: Record<string, WeekPlan>, currentWeekKey: string): CalendarEvent[] {
+  return Object.keys(weeks)
+    .filter(key => key >= currentWeekKey && weeks[key].schedule)
+    .sort()
+    .flatMap(key => buildCalendarEvents(weeks[key].schedule as WeeklySchedule, weeks[key].tasks));
+}
+
+// Identifies the exact content of a batch, so a change to anything that reaches Google is detected
+export function eventsSignature(events: CalendarEvent[]): string {
+  return JSON.stringify(
+    events.map(e => [e.uid, e.summary, e.description, e.priority, e.start.getTime(), e.end.getTime(), e.remind])
+  );
 }
 
 // Mothballed and abandoned work is off the schedule, so it doesn't belong on a calendar

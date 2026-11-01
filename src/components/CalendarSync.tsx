@@ -1,78 +1,25 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Button } from 'react-bootstrap';
+import React, { useMemo, useState } from 'react';
+import { Button, Form } from 'react-bootstrap';
 import type { Task, WeeklySchedule } from '../types';
-import { buildCalendarEvents, downloadIcs, scheduleWeekKey } from '../calendarEvents';
-import {
-  GOOGLE_CALENDAR_URL,
-  googleConfigured,
-  hasGoogleToken,
-  syncToGoogleCalendar,
-} from '../googleCalendar';
+import { buildCalendarEvents, downloadIcs } from '../calendarEvents';
+import { GOOGLE_CALENDAR_URL, googleConfigured } from '../googleCalendar';
+import { setAutoSync, syncNow, useGoogleSync } from '../googleSync';
 
 interface CalendarSyncProps {
   schedule: WeeklySchedule;
   tasks: Task[];
 }
 
-const SYNCED_SIGNATURE_KEY = 'horaGoogleSyncSignature';
-
-type Message = { kind: 'ok' | 'error'; text: string; link?: boolean };
-
+// Export is for the week on screen; Google sync covers the current and later weeks and is driven by googleSync.ts
 const CalendarSync: React.FC<CalendarSyncProps> = ({ schedule, tasks }) => {
   const events = useMemo(() => buildCalendarEvents(schedule, tasks), [schedule, tasks]);
-  const weekKey = scheduleWeekKey(schedule);
-
-  // What the calendar would contain; compared with the last sync to spot unsynced changes
-  const signature = useMemo(
-    () => JSON.stringify(events.map(e => [e.uid, e.summary, e.start.getTime(), e.end.getTime(), e.remind])),
-    [events]
-  );
-
-  const [working, setWorking] = useState(false);
-  const [message, setMessage] = useState<Message | null>(null);
-  const [syncedSignature, setSyncedSignature] = useState(() => localStorage.getItem(SYNCED_SIGNATURE_KEY));
-  const autoAttempted = useRef<string | null>(null);
+  const sync = useGoogleSync();
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
 
   const handleExport = () => {
     const fileName = downloadIcs(events);
-    setMessage({
-      kind: 'ok',
-      text: `Saved ${fileName}. In Google Calendar open Settings > Import & export > Import to add it.`,
-    });
+    setExportMessage(`Saved ${fileName}. In Google Calendar open Settings > Import & export > Import to add it.`);
   };
-
-  const sync = async (automatic = false) => {
-    setWorking(true);
-    if (!automatic) setMessage(null);
-    try {
-      const result = await syncToGoogleCalendar(events, weekKey);
-      localStorage.setItem(SYNCED_SIGNATURE_KEY, signature);
-      setSyncedSignature(signature);
-      setMessage({
-        kind: 'ok',
-        text: `${automatic ? 'Updated Google Calendar' : 'Synced'}: ${result.total} event${result.total !== 1 ? 's' : ''} (${result.created} added, ${result.updated} updated, ${result.deleted} removed).`,
-        link: true,
-      });
-    } catch (error) {
-      setMessage({ kind: 'error', text: error instanceof Error ? error.message : String(error) });
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  // After a first sync, keep the calendar current as the schedule changes, while the Google sign-in is still valid.
-  // Each version of the schedule is tried once so a failing sync can't loop.
-  useEffect(() => {
-    if (!googleConfigured || working || !syncedSignature || signature === syncedSignature) return;
-    if (!hasGoogleToken() || autoAttempted.current === signature) return;
-
-    autoAttempted.current = signature;
-    const timer = setTimeout(() => sync(true), 2000);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature, syncedSignature, working]);
-
-  const outOfDate = googleConfigured && syncedSignature !== null && syncedSignature !== signature && !working;
 
   return (
     <div className="calendar-sync d-flex flex-wrap align-items-center gap-2 mb-2">
@@ -81,17 +28,33 @@ const CalendarSync: React.FC<CalendarSyncProps> = ({ schedule, tasks }) => {
         Export .ics
       </Button>
       {googleConfigured && (
-        <Button variant="outline-secondary" size="sm" className="btn-stoic" onClick={() => sync()} disabled={working}>
-          {working ? 'Syncing...' : 'Sync to Google Calendar'}
-        </Button>
+        <>
+          <Button variant="outline-secondary" size="sm" className="btn-stoic" onClick={syncNow} disabled={sync.working}>
+            {sync.working ? 'Syncing...' : 'Sync to Google Calendar'}
+          </Button>
+          <Form.Check
+            type="switch"
+            id="google-auto-sync"
+            label="Auto-sync"
+            className="small mb-0"
+            title="After your first sync, changes to your schedule are sent to Google Calendar automatically while you're signed in"
+            checked={sync.autoSync}
+            onChange={event => setAutoSync(event.target.checked)}
+          />
+        </>
       )}
-      {outOfDate && !message && (
+      {sync.needsSignIn && (
+        <small className="text-muted">
+          Your Google sign-in has expired, so the latest changes aren't in Google Calendar yet. Press Sync to sign in and update it.
+        </small>
+      )}
+      {sync.outOfDate && !sync.autoSync && !sync.working && (
         <small className="text-muted">The schedule changed since your last sync. Sync again to update Google Calendar.</small>
       )}
-      {message && (
-        <small className={message.kind === 'ok' ? 'text-success' : 'text-danger'}>
-          {message.text}
-          {message.link && (
+      {sync.message && (
+        <small className={sync.message.kind === 'ok' ? 'text-success' : 'text-danger'}>
+          {sync.message.text}
+          {sync.message.kind === 'ok' && (
             <>
               {' '}
               <a href={GOOGLE_CALENDAR_URL} target="_blank" rel="noreferrer">Open Google Calendar</a>
@@ -99,6 +62,7 @@ const CalendarSync: React.FC<CalendarSyncProps> = ({ schedule, tasks }) => {
           )}
         </small>
       )}
+      {exportMessage && <small className="text-success">{exportMessage}</small>}
       {!googleConfigured && (
         <small className="text-muted">Google Calendar sync isn't set up for this copy of HORA (see docs/google-calendar.md).</small>
       )}

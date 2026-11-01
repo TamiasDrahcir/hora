@@ -11,16 +11,27 @@ completed blocks appear with a check mark and no reminder.
 
 ## Sync to Google Calendar
 
-Signs in with Google and keeps a calendar named **HORA** up to date: new blocks are added, changed
-ones updated, and blocks that left the schedule removed. Every event has a 5-minute popup reminder,
-which Google delivers through its own apps (phone, desktop, email), so no browser push is needed.
+Signs in with Google and keeps a calendar named **HORA** up to date. Every sync works in two steps:
+first it **deletes every event HORA previously put on that calendar** from the start of the current
+week onward, and only then adds the up-to-date events. Repeated syncs therefore replace the events
+instead of piling up copies. If the deleting step fails, nothing is added.
 
+- What is synced: the current week and any later week you have planned. Earlier weeks are left in
+  Google Calendar as history and are not touched. Events you add to the HORA calendar yourself are never
+  deleted; only events HORA created are.
+- Every event has a 5-minute popup reminder, which Google delivers through its own apps (phone,
+  desktop, email), so no browser push is needed. Mothballed and abandoned blocks are not sent.
+- **Auto-sync** (the switch next to the Sync button, on by default): after your first manual sync, any
+  change to the synced events (completing, mothballing, abandoning or moving a block, or planning a
+  later week) is sent to Google automatically about two seconds after the change, on any page. Several
+  quick changes are sent as one sync.
+- The sign-in lasts about an hour and a browser cannot renew it silently. When it expires, auto-sync
+  pauses and the Execute page says so; press **Sync** once to sign in again and it catches up.
 - HORA asks only for `calendar.app.created`: it can create its own calendar and manage events **in
   that calendar only**. It cannot read or change your other calendars or events.
-- The sign-in lasts about an hour. While it is valid, changes you make (completing or moving blocks)
-  update Google Calendar automatically; after that, press **Sync** again.
-- HORA remembers its calendar in the browser. If you clear site data it will create a second
-  "HORA" calendar; delete the old one in Google Calendar.
+- HORA remembers its calendar in the browser. If you clear site data it finds the existing "HORA"
+  calendar again by its description. If that ever fails and a second "HORA" calendar appears, delete
+  the old one in Google Calendar.
 
 ### One-time setup (about 10 minutes)
 
