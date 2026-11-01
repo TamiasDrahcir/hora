@@ -43,6 +43,10 @@ npm run deploy
 Open HORA, turn on **Notifications**, and allow the browser prompt. The switch shows
 "Background alerts on" once the first sync succeeds.
 
+Note: Cloudflare can take up to ~10 minutes after the first deploy before the every-minute cron
+starts running, so background alerts may not arrive right away. You can watch it start with
+`npx wrangler tail hora-push` (a line like `"* * * * *" ... - Ok` appears every minute).
+
 ## How it behaves
 
 - Alerts: 5 minutes before a block or event starts, and when a flexible block ends uncompleted.
