@@ -96,4 +96,5 @@ export interface AppState {
   availability: string; // weekly availability windows, e.g. "{MTWRF}0900-1800"
   currentWeekStartDate: Date;
   scriptText?: string; // task script source in the setup editor
+  notificationsEnabled?: boolean; // browser notifications for upcoming and overdue blocks
 }

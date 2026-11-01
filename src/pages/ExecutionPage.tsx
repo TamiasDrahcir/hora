@@ -5,11 +5,14 @@ import { DAYS_OF_WEEK } from '../utils';
 import { resolveAvailability } from '../availability';
 import { computeRevenue, formatMinutes, planningWeekStart } from '../revenue';
 import TimeGridCalendar, { type BlockAction } from '../components/TimeGridCalendar';
+import NotificationSettings from '../components/NotificationSettings';
 
 interface ExecutionPageProps {
   schedule: WeeklySchedule | null;
   tasks: Task[];
   availability: string;
+  notificationsEnabled: boolean;
+  onNotificationsChange: (enabled: boolean) => void;
   onBlockUpdate: (blockId: string, updates: Partial<ScheduleBlock>) => void;
   onNavigate: (view: string) => void;
 }
@@ -20,6 +23,8 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
   schedule,
   tasks,
   availability,
+  notificationsEnabled,
+  onNotificationsChange,
   onBlockUpdate,
   onNavigate,
 }) => {
@@ -128,6 +133,7 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
         <Card.Body>
           <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
             <h6 className="mb-0">Weekly Calendar</h6>
+            <NotificationSettings enabled={notificationsEnabled} onChange={onNotificationsChange} />
             <div className="status-legend">
               <span><span className="swatch" style={{ backgroundColor: '#2fd05f' }} />Completed</span>
               <span><span className="swatch" style={{ backgroundColor: '#fbaed2' }} />Mothballed</span>

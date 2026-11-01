@@ -26,15 +26,23 @@ export function planningWeekStart(date: Date): Date {
   return start;
 }
 
-function blockEndTime(weekStart: Date, block: ScheduleBlock): Date {
-  const end = timeToMinutes(block.endTime);
+function blockDate(weekStart: Date, day: string, time: string): Date {
+  const minutes = timeToMinutes(time);
   return new Date(
     weekStart.getFullYear(),
     weekStart.getMonth(),
-    weekStart.getDate() + DAYS_OF_WEEK.indexOf(block.dayOfWeek),
-    Math.floor(end / 60),
-    end % 60
+    weekStart.getDate() + DAYS_OF_WEEK.indexOf(day),
+    Math.floor(minutes / 60),
+    minutes % 60
   );
+}
+
+export function blockStartTime(weekStart: Date, block: ScheduleBlock): Date {
+  return blockDate(weekStart, block.dayOfWeek, block.startTime);
+}
+
+export function blockEndTime(weekStart: Date, block: ScheduleBlock): Date {
+  return blockDate(weekStart, block.dayOfWeek, block.endTime);
 }
 
 export function computeRevenue(blocks: ScheduleBlock[], weekStart: Date, now: Date): RevenueStats {

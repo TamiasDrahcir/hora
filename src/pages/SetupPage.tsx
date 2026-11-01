@@ -8,15 +8,18 @@ import { scheduleWeek } from '../scheduler';
 import { resolveAvailability, totalAvailabilityHours, DEFAULT_AVAILABILITY } from '../availability';
 import { planningWeekStart } from '../revenue';
 import TimeGridCalendar from '../components/TimeGridCalendar';
+import NotificationSettings from '../components/NotificationSettings';
 
 interface SetupPageProps {
   tasks: Task[];
   scriptText: string;
   schedule: WeeklySchedule | null;
   availability: string;
+  notificationsEnabled: boolean;
   onTasksUpdate: (tasks: Task[]) => void;
   onScriptChange: (script: string) => void;
   onAvailabilityChange: (availability: string) => void;
+  onNotificationsChange: (enabled: boolean) => void;
   onScheduleUpdate: (schedule: WeeklySchedule | null) => void;
   onNavigate: (view: string) => void;
 }
@@ -55,9 +58,11 @@ const SetupPage: React.FC<SetupPageProps> = ({
   scriptText,
   schedule,
   availability: availabilityText,
+  notificationsEnabled,
   onTasksUpdate,
   onScriptChange,
   onAvailabilityChange,
+  onNotificationsChange,
   onScheduleUpdate,
   onNavigate,
 }) => {
@@ -311,7 +316,10 @@ const SetupPage: React.FC<SetupPageProps> = ({
         <Col lg={7} className="mb-4">
           <Card className="card-stoic">
             <Card.Body className="d-flex flex-column">
-              <h6 className="mb-2">Weekly Calendar</h6>
+              <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                <h6 className="mb-0">Weekly Calendar</h6>
+                <NotificationSettings enabled={notificationsEnabled} onChange={onNotificationsChange} />
+              </div>
               <div className="availability-config mb-2">
                 <div className="d-flex align-items-center gap-2">
                   <Form.Label className="mb-0 small text-nowrap">Available hours</Form.Label>

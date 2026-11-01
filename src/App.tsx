@@ -3,6 +3,7 @@ import { Container, Navbar, Button, Modal } from 'react-bootstrap';
 import type { AppState, ScheduleBlock, Task } from './types';
 import { getWeekStartDate } from './utils';
 import { DEFAULT_AVAILABILITY } from './availability';
+import { useBlockNotifications } from './notifications';
 import SetupPage from './pages/SetupPage';
 import ExecutionPage from './pages/ExecutionPage';
 import ReportPage from './pages/ReportPage';
@@ -84,9 +85,20 @@ const App: React.FC = () => {
     updateAppState({ availability });
   };
 
+  const handleNotificationsChange = (notificationsEnabled: boolean) => {
+    updateAppState({ notificationsEnabled });
+  };
+
   const handleNavigate = (view: string) => {
     updateAppState({ currentView: view as any });
   };
+
+  // Alerts fire whichever page is open; waiting for hydration avoids acting on the empty initial state
+  useBlockNotifications(
+    appState.schedule,
+    hydrated && !!appState.notificationsEnabled,
+    () => handleNavigate('execution')
+  );
 
   const handleBlockUpdate = (blockId: string, updates: Partial<ScheduleBlock>) => {
     setAppState(prev => {
@@ -110,9 +122,11 @@ const App: React.FC = () => {
             scriptText={appState.scriptText || ''}
             schedule={appState.schedule}
             availability={appState.availability}
+            notificationsEnabled={!!appState.notificationsEnabled}
             onTasksUpdate={handleTasksUpdate}
             onScriptChange={handleScriptChange}
             onAvailabilityChange={handleAvailabilityChange}
+            onNotificationsChange={handleNotificationsChange}
             onScheduleUpdate={handleScheduleUpdate}
             onNavigate={handleNavigate}
           />
@@ -123,6 +137,8 @@ const App: React.FC = () => {
             schedule={appState.schedule}
             tasks={appState.tasks}
             availability={appState.availability}
+            notificationsEnabled={!!appState.notificationsEnabled}
+            onNotificationsChange={handleNotificationsChange}
             onBlockUpdate={handleBlockUpdate}
             onNavigate={handleNavigate}
           />
@@ -229,6 +245,12 @@ const App: React.FC = () => {
             <li><span className="priority-fire">Fire</span> - Rigid, less important (passion projects)</li>
             <li><span className="priority-air">Air</span> - Flexible, less important (entertainment)</li>
           </ul>
+
+          <h6 className="mt-3">Notifications</h6>
+          <p>
+            Turn on the Notifications switch (Setup or Execute) to get an alert 5 minutes before a block or event starts,
+            and when a task block ends without being completed. Alerts only appear while HORA is open in a browser tab.
+          </p>
 
           <h6 className="mt-3">Revenue and Balance</h6>
           <ul>
