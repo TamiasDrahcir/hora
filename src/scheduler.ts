@@ -10,6 +10,7 @@ import {
   DAYS_OF_WEEK
 } from './utils';
 import { totalAvailabilityHours, type Availability } from './availability';
+import { planningWeekStart } from './revenue';
 
 export class HORAScheduler {
   private tasks: Task[];
@@ -33,7 +34,7 @@ export class HORAScheduler {
     this.placeAnchors();
 
     return {
-      weekStartDate: new Date(),
+      weekStartDate: planningWeekStart(new Date()),
       blocks: this.blocks,
       totalAvailableHours: totalAvailabilityHours(this.availability),
       totalAnchorHours: this.calculateTotalAnchorHours(),

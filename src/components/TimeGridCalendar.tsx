@@ -4,6 +4,8 @@ import type { ScheduleBlock, Task } from '../types';
 import { DAYS_OF_WEEK, minutesToTime, timeToMinutes, formatDurationHours, isRigid } from '../utils';
 import type { Availability, TimeWindow } from '../availability';
 
+export type BlockAction = 'toggle-complete' | 'toggle-mothball' | 'abandon';
+
 interface TimeGridCalendarProps {
   blocks: ScheduleBlock[];
   candidateBlocks?: ScheduleBlock[];
@@ -11,22 +13,17 @@ interface TimeGridCalendarProps {
   availability?: Availability;
   editable?: boolean;
   showCandidateLane?: boolean;
+  showBlockActions?: boolean; // completion / mothball / abandon buttons on flexible blocks
+  hourHeight?: number;
+  currentTime?: { day: string; minutes: number }; // draws a "now" line
   onMoveBlock?: (block: ScheduleBlock, dayOfWeek: string, startTime: string) => void;
   onPlaceCandidate?: (candidate: ScheduleBlock, subItemId: string | undefined, dayOfWeek: string, startTime: string) => void;
   onRemoveBlock?: (blockId: string) => void;
-  onBlockCompletion?: (blockId: string, completed: boolean) => void;
+  onBlockAction?: (blockId: string, action: BlockAction) => void;
 }
 
 const DEFAULT_RANGE: TimeWindow = { start: 8 * 60, end: 22 * 60 };
 const SLOT_MINUTES = 15;
-const HOUR_HEIGHT = 64;
-
-function formatHour(minutes: number): string {
-  const hour = Math.floor(minutes / 60);
-  const suffix = hour >= 12 ? 'PM' : 'AM';
-  const displayHour = hour % 12 || 12;
-  return `${displayHour}${suffix}`;
-}
 
 const PRIORITY_LABELS: Record<string, string> = {
   earth: 'Earth (rigid, important)',
@@ -34,6 +31,13 @@ const PRIORITY_LABELS: Record<string, string> = {
   fire: 'Fire (rigid, less important)',
   air: 'Air (flexible, less important)',
 };
+
+function formatHour(minutes: number): string {
+  const hour = Math.floor(minutes / 60);
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}${suffix}`;
+}
 
 function formatRecurrence(task: Task): string | null {
   if (task.recurrenceEnd) return `Weekly until ${task.recurrenceEnd}`;
@@ -53,6 +57,42 @@ function unavailableSpans(windows: TimeWindow[], range: TimeWindow): TimeWindow[
   return spans.filter(span => span.end > span.start);
 }
 
+const ICON_PROPS = {
+  width: 14,
+  height: 14,
+  viewBox: '0 0 16 16',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.8,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+  'aria-hidden': true,
+};
+
+const CheckIcon = () => (
+  <svg {...ICON_PROPS}><path d="M3 8.5l3.2 3.2L13 4.8" /></svg>
+);
+
+const MothballIcon = () => (
+  <svg {...ICON_PROPS}>
+    <rect x="2" y="3" width="12" height="3" rx="0.6" />
+    <path d="M3.2 6v6.6c0 .3.2.4.4.4h8.8c.2 0 .4-.1.4-.4V6M6.5 9h3" />
+  </svg>
+);
+
+const ReviveIcon = () => (
+  <svg {...ICON_PROPS}>
+    <path d="M2.6 2.8v3.4h3.4" />
+    <path d="M3 6.2A5.4 5.4 0 1 1 2.8 9" />
+  </svg>
+);
+
+const AbandonIcon = () => (
+  <svg {...ICON_PROPS}>
+    <path d="M2.5 4.5h11M6 4.5V3h4v1.5M4 4.5l.6 8.4c0 .3.3.6.6.6h5.6c.3 0 .6-.3.6-.6l.6-8.4M6.8 7v4M9.2 7v4" />
+  </svg>
+);
+
 const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
   blocks,
   candidateBlocks = [],
@@ -60,10 +100,13 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
   availability,
   editable = false,
   showCandidateLane = false,
+  showBlockActions = false,
+  hourHeight = 64,
+  currentTime,
   onMoveBlock,
   onPlaceCandidate,
   onRemoveBlock,
-  onBlockCompletion,
+  onBlockAction,
 }) => {
   const [hover, setHover] = useState<{ block: ScheduleBlock; x: number; y: number } | null>(null);
 
@@ -92,7 +135,12 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
     return labels;
   }, [range]);
 
-  const canEditBlock = (block: ScheduleBlock) => editable && block.blockType === 'anchor';
+  // Abandoned blocks are disabled: they can't be moved or removed
+  const canEditBlock = (block: ScheduleBlock) =>
+    editable && block.blockType === 'anchor' && block.status !== 'abandoned';
+
+  const clampStart = (start: number, duration: number): number =>
+    Math.max(range.start, Math.min(start, range.end - duration));
 
   // Use the latest copy of the hovered block so the tooltip vanishes if it is moved away or removed
   const hovered = hover ? blocks.find(item => item.id === hover.block.id) : undefined;
@@ -117,7 +165,9 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
       if (task.deadline) rows.push(['Deadline', task.deadline]);
     }
     if (recurrence) rows.push(['Repeats', recurrence]);
-    if (block.completed) rows.push(['Status', 'Completed']);
+    if (block.status === 'abandoned') rows.push(['Status', 'Abandoned']);
+    else if (block.status === 'mothballed') rows.push(['Status', 'Mothballed']);
+    else if (block.completed) rows.push(['Status', 'Completed']);
 
     // Keep the tooltip on screen: flip left/up when near the right/bottom edges
     const flipX = x > window.innerWidth - 300;
@@ -150,8 +200,63 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
     );
   };
 
-  const clampStart = (start: number, duration: number): number =>
-    Math.max(range.start, Math.min(start, range.end - duration));
+  const renderActions = (block: ScheduleBlock) => {
+    const mothballed = block.status === 'mothballed';
+    const abandoned = block.status === 'abandoned';
+    const completed = block.completed;
+
+    const actions: Array<{
+      action: BlockAction;
+      label: string;
+      icon: React.ReactNode;
+      disabled: boolean;
+      pressed?: boolean;
+    }> = [
+      {
+        action: 'toggle-complete',
+        label: completed ? 'Undo completion' : 'Mark complete',
+        icon: <CheckIcon />,
+        disabled: mothballed || abandoned,
+        pressed: completed,
+      },
+      {
+        action: 'toggle-mothball',
+        label: mothballed ? 'Revive' : 'Mothball',
+        icon: mothballed ? <ReviveIcon /> : <MothballIcon />,
+        disabled: completed || abandoned,
+      },
+      {
+        action: 'abandon',
+        label: 'Abandon',
+        icon: <AbandonIcon />,
+        disabled: completed || abandoned,
+      },
+    ];
+
+    return (
+      <div
+        className="time-grid-actions"
+        // Keep the block tooltip from covering the button's own label
+        onMouseEnter={() => setHover(null)}
+        onMouseMove={event => { event.stopPropagation(); setHover(null); }}
+      >
+        {actions.map(item => (
+          <button
+            key={item.action}
+            type="button"
+            className={`time-grid-action ${item.pressed ? 'pressed' : ''}`}
+            title={item.label}
+            aria-label={item.label}
+            aria-pressed={item.pressed}
+            disabled={item.disabled}
+            onClick={event => { event.stopPropagation(); onBlockAction?.(block.id, item.action); }}
+          >
+            {item.icon}
+          </button>
+        ))}
+      </div>
+    );
+  };
 
   const handleDrop = (event: React.DragEvent<HTMLDivElement>, dayOfWeek: string) => {
     if (!editable) return;
@@ -163,7 +268,7 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
     const grabOffset = parseFloat(event.dataTransfer.getData('grabOffset')) || 0;
 
     const bounds = event.currentTarget.getBoundingClientRect();
-    const pointerMinutes = ((event.clientY - bounds.top) / HOUR_HEIGHT) * 60 + range.start;
+    const pointerMinutes = ((event.clientY - bounds.top) / hourHeight) * 60 + range.start;
     const snappedStart = Math.round((pointerMinutes - grabOffset) / SLOT_MINUTES) * SLOT_MINUTES;
 
     if (blockId) {
@@ -186,7 +291,7 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
         <div className="time-grid-axis" aria-hidden="true">
           <div className="time-grid-axis-spacer" />
           {timeLabels.slice(0, -1).map(minutes => (
-            <div key={minutes} className="time-grid-time-label" style={{ top: `${((minutes - range.start) / 60) * HOUR_HEIGHT}px` }}>
+            <div key={minutes} className="time-grid-time-label" style={{ top: `${((minutes - range.start) / 60) * hourHeight}px` }}>
               {formatHour(minutes)}
             </div>
           ))}
@@ -201,7 +306,7 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
                 <h5 className="time-grid-day-header">{day}</h5>
                 <div
                   className="time-grid-lane"
-                  style={{ height: `${((range.end - range.start) / 60) * HOUR_HEIGHT}px` }}
+                  style={{ height: `${((range.end - range.start) / 60) * hourHeight}px` }}
                   onDragOver={editable ? event => event.preventDefault() : undefined}
                   onDrop={editable ? event => handleDrop(event, day) : undefined}
                 >
@@ -210,19 +315,27 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
                       key={span.start}
                       className="time-grid-unavailable"
                       style={{
-                        top: `${((span.start - range.start) / 60) * HOUR_HEIGHT}px`,
-                        height: `${((span.end - span.start) / 60) * HOUR_HEIGHT}px`,
+                        top: `${((span.start - range.start) / 60) * hourHeight}px`,
+                        height: `${((span.end - span.start) / 60) * hourHeight}px`,
                       }}
                     />
                   ))}
                   {timeLabels.slice(0, -1).map(minutes => (
-                    <div key={minutes} className="time-grid-hour-line" style={{ top: `${((minutes - range.start) / 60) * HOUR_HEIGHT}px` }} />
+                    <div key={minutes} className="time-grid-hour-line" style={{ top: `${((minutes - range.start) / 60) * hourHeight}px` }} />
                   ))}
                   {dayBlocks.map(block => {
                     const start = timeToMinutes(block.startTime);
-                    const top = ((start - range.start) / 60) * HOUR_HEIGHT;
-                    const height = Math.max((block.durationMinutes / 60) * HOUR_HEIGHT, 28);
+                    const top = ((start - range.start) / 60) * hourHeight;
+                    const height = Math.max((block.durationMinutes / 60) * hourHeight, 28);
                     const movable = canEditBlock(block);
+                    const hasActions = showBlockActions && block.blockType === 'anchor';
+                    const statusClass = block.status === 'abandoned'
+                      ? 'status-abandoned'
+                      : block.status === 'mothballed'
+                        ? 'status-mothballed'
+                        : block.completed
+                          ? 'status-completed'
+                          : '';
                     return (
                       <div
                         key={block.id}
@@ -231,36 +344,38 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
                           setHover(null);
                           const rect = event.currentTarget.getBoundingClientRect();
                           event.dataTransfer.setData('blockId', block.id);
-                          event.dataTransfer.setData('grabOffset', String(((event.clientY - rect.top) / HOUR_HEIGHT) * 60));
+                          event.dataTransfer.setData('grabOffset', String(((event.clientY - rect.top) / hourHeight) * 60));
                         } : undefined}
                         onMouseEnter={event => setHover({ block, x: event.clientX, y: event.clientY })}
                         onMouseMove={event => setHover({ block, x: event.clientX, y: event.clientY })}
                         onMouseLeave={() => setHover(null)}
-                        className={`time-grid-block ${block.completed ? 'completed' : ''} ${movable ? 'movable' : ''}`}
+                        className={`time-grid-block ${statusClass} ${movable ? 'movable' : ''} ${hasActions ? 'has-actions' : ''}`}
                         style={{ top: `${top}px`, height: `${height}px` }}
                         data-priority={block.priority}
-                        onClick={onBlockCompletion ? () => onBlockCompletion(block.id, !block.completed) : undefined}
                       >
-                        <div className="time-grid-block-heading">
-                          <strong>{block.taskCode}</strong>
-                          {movable && onRemoveBlock && (
-                            <button type="button" className="time-grid-remove" aria-label={`Remove ${block.taskCode}`} onClick={event => { event.stopPropagation(); onRemoveBlock(block.id); }}>
-                              x
-                            </button>
-                          )}
+                        <div className="time-grid-block-body">
+                          <div className="time-grid-block-heading">
+                            <strong>{block.taskCode}</strong>
+                            {movable && onRemoveBlock && (
+                              <button type="button" className="time-grid-remove" aria-label={`Remove ${block.taskCode}`} onClick={event => { event.stopPropagation(); onRemoveBlock(block.id); }}>
+                                x
+                              </button>
+                            )}
+                          </div>
+                          {block.objectiveCode && <span className="time-grid-meta">{block.objectiveCode}</span>}
+                          <span className="time-grid-meta">{block.startTime} - {block.endTime}</span>
+                          {block.isSporadic && <span className="time-grid-badge">Sporadic</span>}
                         </div>
-                        {block.objectiveCode && <span className="time-grid-meta">{block.objectiveCode}</span>}
-                        <span className="time-grid-meta">{block.startTime} - {block.endTime}</span>
-                        {block.isSporadic && <span className="time-grid-badge">Sporadic</span>}
-                        {onBlockCompletion && (
-                          <label className="time-grid-check" onClick={event => event.stopPropagation()}>
-                            <input type="checkbox" checked={block.completed} onChange={event => onBlockCompletion(block.id, event.target.checked)} />
-                            Done
-                          </label>
-                        )}
+                        {hasActions && renderActions(block)}
                       </div>
                     );
                   })}
+                  {currentTime && currentTime.day === day && currentTime.minutes >= range.start && currentTime.minutes <= range.end && (
+                    <div
+                      className="time-grid-now"
+                      style={{ top: `${((currentTime.minutes - range.start) / 60) * hourHeight}px` }}
+                    />
+                  )}
                 </div>
               </div>
             );

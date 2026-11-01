@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Navbar, Button, Modal } from 'react-bootstrap';
-import type { AppState, Task } from './types';
+import type { AppState, ScheduleBlock, Task } from './types';
 import { getWeekStartDate } from './utils';
 import { DEFAULT_AVAILABILITY } from './availability';
 import SetupPage from './pages/SetupPage';
@@ -88,20 +88,16 @@ const App: React.FC = () => {
     updateAppState({ currentView: view as any });
   };
 
-  const handleBlockCompletion = (blockId: string, completed: boolean) => {
-    if (!appState.schedule) return;
-    
-    const updatedBlocks = appState.schedule.blocks.map(block =>
-      block.id === blockId
-        ? { ...block, completed, completedAt: completed ? new Date() : undefined }
-        : block
-    );
-    
-    updateAppState({
-      schedule: {
-        ...appState.schedule,
-        blocks: updatedBlocks,
-      },
+  const handleBlockUpdate = (blockId: string, updates: Partial<ScheduleBlock>) => {
+    setAppState(prev => {
+      if (!prev.schedule) return prev;
+      return {
+        ...prev,
+        schedule: {
+          ...prev.schedule,
+          blocks: prev.schedule.blocks.map(block => (block.id === blockId ? { ...block, ...updates } : block)),
+        },
+      };
     });
   };
 
@@ -125,7 +121,9 @@ const App: React.FC = () => {
         return (
           <ExecutionPage
             schedule={appState.schedule}
-            onBlockCompletion={handleBlockCompletion}
+            tasks={appState.tasks}
+            availability={appState.availability}
+            onBlockUpdate={handleBlockUpdate}
             onNavigate={handleNavigate}
           />
         );
@@ -212,7 +210,7 @@ const App: React.FC = () => {
           <h6>Getting Started</h6>
           <ol>
             <li><strong>Setup:</strong> Write your tasks in the task script, hit Compile, then Generate Schedule to see proposed times for each subobjective on the calendar</li>
-            <li><strong>Execute:</strong> Check off objectives as you complete them</li>
+            <li><strong>Execute:</strong> Complete, mothball or abandon each task block as the week unfolds</li>
             <li><strong>Report:</strong> View your weekly performance metrics and balance</li>
           </ol>
           
@@ -232,8 +230,14 @@ const App: React.FC = () => {
             <li><span className="priority-air">Air</span> - Flexible, less important (entertainment)</li>
           </ul>
 
-          <h6 className="mt-3">Balance</h6>
-          <p>Your temporal balance = objective hours completed - anchor hours passed</p>
+          <h6 className="mt-3">Revenue and Balance</h6>
+          <ul>
+            <li><strong>Nominal revenue:</strong> time worth of tasks you should have finished by now, per the schedule</li>
+            <li><strong>Actual revenue:</strong> time worth of tasks you actually finished</li>
+            <li><strong>Closet debt:</strong> time worth of tasks you currently have mothballed</li>
+            <li><strong>Lost revenue:</strong> time worth of tasks you abandoned</li>
+          </ul>
+          <p>Balance = actual revenue - nominal revenue. Mothballing or abandoning a task removes it from nominal revenue.</p>
           <p><span className="balance-positive">Positive = Bounty (ahead of schedule)</span></p>
           <p><span className="balance-negative">Negative = Debt (behind schedule)</span></p>
         </Modal.Body>

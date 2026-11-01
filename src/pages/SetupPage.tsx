@@ -5,7 +5,8 @@ import type { Task, ScheduleBlock, WeeklySchedule } from '../types';
 import { isRigid, timeToMinutes, minutesToTime } from '../utils';
 import { parseTaskScript, tasksToScript, type ScriptError } from '../taskScript';
 import { scheduleWeek } from '../scheduler';
-import { parseAvailability, totalAvailabilityHours, DEFAULT_AVAILABILITY } from '../availability';
+import { resolveAvailability, totalAvailabilityHours, DEFAULT_AVAILABILITY } from '../availability';
+import { planningWeekStart } from '../revenue';
 import TimeGridCalendar from '../components/TimeGridCalendar';
 
 interface SetupPageProps {
@@ -66,11 +67,8 @@ const SetupPage: React.FC<SetupPageProps> = ({
   const [calendarNotice, setCalendarNotice] = useState<string | null>(null);
 
   // An invalid availability entry falls back to the default so the calendar and scheduler stay usable
-  const parsedAvailability = useMemo(() => parseAvailability(availabilityText), [availabilityText]);
-  const availability = useMemo(
-    () => (parsedAvailability.errors.length > 0 ? parseAvailability(DEFAULT_AVAILABILITY).availability : parsedAvailability.availability),
-    [parsedAvailability]
-  );
+  const resolvedAvailability = useMemo(() => resolveAvailability(availabilityText), [availabilityText]);
+  const availability = resolvedAvailability.availability;
   const availableHours = totalAvailabilityHours(availability);
 
   // Prefill the editor from existing tasks when there is no saved script yet
@@ -190,7 +188,7 @@ const SetupPage: React.FC<SetupPageProps> = ({
   const commitBlocks = (blocks: ScheduleBlock[]) => {
     const anchorHours = blocks.filter(b => b.blockType === 'anchor').reduce((sum, b) => sum + b.durationMinutes, 0) / 60;
     onScheduleUpdate({
-      weekStartDate: schedule?.weekStartDate ?? new Date(),
+      weekStartDate: schedule?.weekStartDate ?? planningWeekStart(new Date()),
       blocks,
       totalAvailableHours: availableHours,
       totalAnchorHours: anchorHours,
@@ -198,11 +196,12 @@ const SetupPage: React.FC<SetupPageProps> = ({
     });
   };
 
+  // Abandoned blocks are disabled, so new work may take their slot
   const overlapsExisting = (day: string, startTime: string, durationMinutes: number, ignoreId?: string): boolean => {
     const start = timeToMinutes(startTime);
     const end = start + durationMinutes;
     return currentBlocks.some(
-      b => b.id !== ignoreId && b.dayOfWeek === day && start < timeToMinutes(b.endTime) && end > timeToMinutes(b.startTime)
+      b => b.id !== ignoreId && b.status !== 'abandoned' && b.dayOfWeek === day && start < timeToMinutes(b.endTime) && end > timeToMinutes(b.startTime)
     );
   };
 
@@ -322,14 +321,14 @@ const SetupPage: React.FC<SetupPageProps> = ({
                     spellCheck={false}
                     value={availabilityText}
                     placeholder="{MTWRF}0900-1800, {SU}1000-1400"
-                    isInvalid={parsedAvailability.errors.length > 0}
+                    isInvalid={resolvedAvailability.errors.length > 0}
                     onChange={(e) => onAvailabilityChange(e.target.value)}
                   />
                   <small className="text-muted text-nowrap">{availableHours}h / week</small>
                 </div>
-                {parsedAvailability.errors.length > 0 && (
+                {resolvedAvailability.errors.length > 0 && (
                   <div className="script-errors mt-1">
-                    {parsedAvailability.errors.map((message, i) => <div key={i}>{message}</div>)}
+                    {resolvedAvailability.errors.map((message, i) => <div key={i}>{message}</div>)}
                     <div>Using the default {DEFAULT_AVAILABILITY} until fixed.</div>
                   </div>
                 )}

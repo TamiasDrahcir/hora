@@ -36,7 +36,7 @@ const HelpPage: React.FC<HelpPageProps> = ({ onNavigate }) => (
     </section>
     <section className="help-section">
       <h2>Balance</h2>
-      <p>Positive balance is bounty: completed work is ahead of elapsed anchor time. Negative balance is debt.</p>
+      <p>Balance is actual revenue (completed work) minus nominal revenue (work scheduled to be done by now). Positive balance is bounty; negative balance is debt. Mothballed work counts as closet debt and abandoned work as lost revenue; neither counts towards nominal revenue.</p>
     </section>
     <div className="page-actions">
       <Button className="btn-stoic" onClick={() => onNavigate('setup')}>Back to Home</Button>

@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { Card, Button, Container, Row, Col, Table, ProgressBar } from 'react-bootstrap';
 import type { Task, WeeklySchedule } from '../types';
-import { calculateBalance, isRigid } from '../utils';
+import { isRigid } from '../utils';
+import { computeRevenue, planningWeekStart } from '../revenue';
 
 interface ReportPageProps {
   schedule: WeeklySchedule | null;
@@ -21,15 +22,14 @@ const ReportPage: React.FC<ReportPageProps> = ({ schedule, tasks, onNavigate }) 
     const totalTaskHours = tasks.reduce((sum, t) => sum + (isRigid(t.priority) ? 0 : t.hoursRequired), 0);
     const totalTaskPercentage = (totalTaskHours / totalAvailableHours) * 100;
 
-    const completedObjectiveHours = schedule.blocks
-      .filter(b => b.completed && b.blockType === 'anchor')
-      .reduce((sum, b) => sum + b.durationMinutes, 0) / 60;
-
-    const anchorMinutesPassed = schedule.blocks
-      .filter(b => b.blockType === 'anchor')
-      .reduce((sum, b) => sum + (b.completed ? b.durationMinutes : 0), 0);
-
-    const balance = calculateBalance(completedObjectiveHours, anchorMinutesPassed);
+    const revenue = computeRevenue(
+      schedule.blocks,
+      planningWeekStart(new Date(schedule.weekStartDate)),
+      new Date()
+    );
+    const completedObjectiveHours = revenue.actual / 60;
+    const anchorMinutesPassed = revenue.nominal;
+    const balance = revenue.balance;
 
     // Load by priority
     const loadByPriority = {
@@ -77,6 +77,8 @@ const ReportPage: React.FC<ReportPageProps> = ({ schedule, tasks, onNavigate }) 
       totalTaskPercentage,
       completedObjectiveHours,
       anchorMinutesPassed,
+      closetDebtMinutes: revenue.closetDebt,
+      lostMinutes: revenue.lost,
       balance,
       balanceHours: Math.floor(Math.abs(balance) / 60),
       balanceMinutes: Math.abs(balance) % 60,
@@ -186,12 +188,20 @@ const ReportPage: React.FC<ReportPageProps> = ({ schedule, tasks, onNavigate }) 
               <Table striped size="sm">
                 <tbody>
                   <tr>
-                    <td>Hours Completed:</td>
+                    <td>Actual Revenue:</td>
                     <td>{report.completedObjectiveHours.toFixed(1)}h</td>
                   </tr>
                   <tr>
-                    <td>Anchor Hours Passed:</td>
+                    <td>Nominal Revenue:</td>
                     <td>{(report.anchorMinutesPassed / 60).toFixed(1)}h</td>
+                  </tr>
+                  <tr>
+                    <td>Closet Debt:</td>
+                    <td>{(report.closetDebtMinutes / 60).toFixed(1)}h</td>
+                  </tr>
+                  <tr>
+                    <td>Lost Revenue:</td>
+                    <td>{(report.lostMinutes / 60).toFixed(1)}h</td>
                   </tr>
                   <tr>
                     <td>Temporal Balance:</td>

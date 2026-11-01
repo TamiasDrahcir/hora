@@ -12,6 +12,15 @@ export type Availability = Record<string, TimeWindow[]>;
 
 export const DEFAULT_AVAILABILITY = '{MTWRF}0900-1800';
 
+// Parsed availability, falling back to the default when the text is invalid
+export function resolveAvailability(text: string): { availability: Availability; errors: string[] } {
+  const parsed = parseAvailability(text);
+  return {
+    availability: parsed.errors.length > 0 ? parseAvailability(DEFAULT_AVAILABILITY).availability : parsed.availability,
+    errors: parsed.errors,
+  };
+}
+
 const ENTRY_RE = /^\{([MTWRFSU]+)\}\s*(\d{3,4}\s*-\s*\d{3,4})$/;
 
 function mergeWindows(windows: TimeWindow[]): TimeWindow[] {

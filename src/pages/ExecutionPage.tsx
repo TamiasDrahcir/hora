@@ -1,56 +1,49 @@
-import React, { useMemo } from 'react';
-import { Card, Button, Container, Row, Col, Table, Alert } from 'react-bootstrap';
-import type { WeeklySchedule } from '../types';
-import { calculateBalance, DAYS_OF_WEEK, timeToMinutes, formatDurationHours } from '../utils';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Card, Button, Container, Row, Col, Alert } from 'react-bootstrap';
+import type { ScheduleBlock, Task, WeeklySchedule } from '../types';
+import { DAYS_OF_WEEK } from '../utils';
+import { resolveAvailability } from '../availability';
+import { computeRevenue, formatMinutes, planningWeekStart } from '../revenue';
+import TimeGridCalendar, { type BlockAction } from '../components/TimeGridCalendar';
 
 interface ExecutionPageProps {
   schedule: WeeklySchedule | null;
-  onBlockCompletion: (blockId: string, completed: boolean) => void;
+  tasks: Task[];
+  availability: string;
+  onBlockUpdate: (blockId: string, updates: Partial<ScheduleBlock>) => void;
   onNavigate: (view: string) => void;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const ExecutionPage: React.FC<ExecutionPageProps> = ({
   schedule,
-  onBlockCompletion,
+  tasks,
+  availability,
+  onBlockUpdate,
   onNavigate,
 }) => {
-  const stats = useMemo(() => {
-    if (!schedule) return null;
+  const [now, setNow] = useState(() => new Date());
 
-    const completedObjectiveHours = schedule.blocks
-      .filter(b => b.completed && b.blockType === 'anchor')
-      .reduce((sum, b) => sum + b.durationMinutes, 0) / 60;
+  // Nominal revenue depends on the clock, so keep it current
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
 
-    const anchorMinutesPassed = schedule.blocks
-      .filter(b => b.blockType === 'anchor')
-      .reduce((sum, b) => sum + (b.completed ? b.durationMinutes : 0), 0);
+  const resolvedAvailability = useMemo(() => resolveAvailability(availability).availability, [availability]);
 
-    const balance = calculateBalance(completedObjectiveHours, anchorMinutesPassed);
-    const balanceHours = Math.floor(Math.abs(balance) / 60);
-    const balanceMinutes = Math.abs(balance) % 60;
+  const weekStart = useMemo(
+    () => (schedule ? planningWeekStart(new Date(schedule.weekStartDate)) : null),
+    [schedule]
+  );
 
-    return {
-      completedObjectiveHours,
-      anchorMinutesPassed,
-      balance,
-      balanceHours,
-      balanceMinutes,
-      totalBlocks: schedule.blocks.length,
-      completedBlocks: schedule.blocks.filter(b => b.completed).length,
-    };
-  }, [schedule]);
+  const stats = useMemo(
+    () => (schedule && weekStart ? computeRevenue(schedule.blocks, weekStart, now) : null),
+    [schedule, weekStart, now]
+  );
 
-  const getPriorityColor = (priority: string): string => {
-    const colors = {
-      earth: '#cc7722',
-      water: '#1b2b5e',
-      fire: '#ff6347',
-      air: '#4169e1',
-    };
-    return colors[priority as keyof typeof colors] || '#999';
-  };
-
-  if (!schedule || !stats) {
+  if (!schedule || !stats || !weekStart) {
     return (
       <Container className="fade-in">
         <Alert variant="warning">No schedule available. Generate a schedule from Setup first.</Alert>
@@ -61,135 +54,101 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
     );
   }
 
-  const blocksByDay = DAYS_OF_WEEK.slice(0, 5).reduce((acc, day) => {
-    acc[day] = schedule.blocks
-      .filter(b => b.dayOfWeek === day)
-      .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
-    return acc;
-  }, {} as Record<string, typeof schedule.blocks>);
+  const handleBlockAction = (blockId: string, action: BlockAction) => {
+    const block = schedule.blocks.find(b => b.id === blockId);
+    if (!block) return;
+
+    if (action === 'toggle-complete') {
+      onBlockUpdate(blockId, block.completed
+        ? { completed: false, completedAt: undefined }
+        : { completed: true, completedAt: new Date() });
+    } else if (action === 'toggle-mothball') {
+      onBlockUpdate(blockId, { status: block.status === 'mothballed' ? 'active' : 'mothballed' });
+    } else {
+      onBlockUpdate(blockId, { status: 'abandoned' });
+    }
+  };
+
+  // Only draw the "now" line when today falls inside the planned week
+  const inWeek = now >= weekStart && now.getTime() < weekStart.getTime() + 7 * DAY_MS;
+  const currentTime = inWeek
+    ? { day: DAYS_OF_WEEK[(now.getDay() + 6) % 7], minutes: now.getHours() * 60 + now.getMinutes() }
+    : undefined;
+
+  const balanceClass = stats.balance >= 0 ? 'balance-positive' : 'balance-negative';
+
+  const cards: Array<{ title: string; value: string; note: string; className?: string }> = [
+    {
+      title: 'Nominal revenue',
+      value: formatMinutes(stats.nominal),
+      note: 'Time worth of tasks you should have finished by now',
+    },
+    {
+      title: 'Actual revenue',
+      value: formatMinutes(stats.actual),
+      note: 'Time worth of tasks you actually finished',
+    },
+    {
+      title: 'Balance',
+      value: `${stats.balance >= 0 ? '+' : '-'}${formatMinutes(stats.balance)}`,
+      note: stats.balance >= 0 ? 'Bounty: you are ahead' : 'Debt: you are behind',
+      className: balanceClass,
+    },
+    {
+      title: 'Closet debt',
+      value: formatMinutes(stats.closetDebt),
+      note: 'Time worth of tasks currently mothballed',
+    },
+    {
+      title: 'Lost revenue',
+      value: formatMinutes(stats.lost),
+      note: 'Time worth of tasks you abandoned',
+    },
+  ];
 
   return (
-    <Container className="fade-in">
+    <Container fluid className="fade-in">
       <h1 className="page-title">Execute Your Week</h1>
 
-      <Row className="mb-4">
-        <Col md={6}>
-          <Card className="card-stoic p-3">
-            <Card.Body>
-              <h6>Progress</h6>
-              <div className="progress mb-3">
-                <div
-                  className="progress-bar"
-                  style={{
-                    width: `${(stats.completedBlocks / stats.totalBlocks) * 100}%`,
-                    backgroundColor: '#6b5344',
-                  }}
-                ></div>
-              </div>
-              <p className="mb-0">
-                <strong>{stats.completedBlocks}</strong> of <strong>{stats.totalBlocks}</strong> objectives completed
-              </p>
-            </Card.Body>
-          </Card>
-        </Col>
-        <Col md={6}>
-          <Card className="card-stoic p-3">
-            <Card.Body>
-              <h6>Temporal Balance</h6>
-              <div className={`h5 mb-0 ${stats.balance >= 0 ? 'balance-positive' : 'balance-negative'}`}>
-                {stats.balance >= 0 ? '+' : '-'}{stats.balanceHours}h {stats.balanceMinutes}m
-              </div>
-              <small className="text-muted">
-                {stats.balance >= 0 ? 'Bounty (Ahead)' : 'Debt (Behind)'}
-              </small>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
-
-      <Row className="mb-4">
-        <Col>
-          <Card className="card-stoic p-3">
-            <Card.Body>
-              <Table striped size="sm">
-                <tbody>
-                  <tr>
-                    <td><strong>Objective Hours Completed:</strong></td>
-                    <td>{stats.completedObjectiveHours.toFixed(1)} hours</td>
-                  </tr>
-                  <tr>
-                    <td><strong>Anchor Hours Passed:</strong></td>
-                    <td>{(stats.anchorMinutesPassed / 60).toFixed(1)} hours</td>
-                  </tr>
-                </tbody>
-              </Table>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
-
-      <div className="schedule-view">
-        {DAYS_OF_WEEK.slice(0, 5).map(day => (
-          <div key={day} className="mb-5">
-            <h5 style={{ borderBottom: '2px solid var(--stoic-border)', paddingBottom: '0.5rem' }}>
-              {day}
-            </h5>
-            {blocksByDay[day].length > 0 ? (
-              <div className="day-blocks">
-                {blocksByDay[day].map(block => (
-                  <Card
-                    key={block.id}
-                    className={`schedule-block ${block.completed ? 'completed' : ''}`}
-                    style={{
-                      borderLeftColor: getPriorityColor(block.priority),
-                      backgroundColor: block.completed ? '#f0f0f0' : 'white',
-                      opacity: block.completed ? 0.7 : 1,
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => onBlockCompletion(block.id, !block.completed)}
-                  >
-                    <Card.Body className="p-2">
-                      <div className="d-flex justify-content-between align-items-start">
-                        <div className="flex-grow-1">
-                          <div className="d-flex align-items-center gap-2">
-                            <input
-                              type="checkbox"
-                              checked={block.completed}
-                              onChange={(e) => {
-                                e.stopPropagation();
-                                onBlockCompletion(block.id, e.target.checked);
-                              }}
-                            />
-                            <div>
-                              <h6 className="mb-1" style={{ textDecoration: block.completed ? 'line-through' : 'none' }}>
-                                {block.taskCode}
-                                {block.objectiveCode && <span className="ms-2 text-muted">{block.objectiveCode}</span>}
-                              </h6>
-                              <small className="text-muted">
-                                {block.startTime} - {block.endTime} ({formatDurationHours(block.durationMinutes)})
-                              </small>
-                              {block.isSporadic && <div className="badge bg-warning ms-2">Sporadic</div>}
-                            </div>
-                          </div>
-                          {block.description && (
-                            <small className="text-muted d-block mt-2">{block.description}</small>
-                          )}
-                        </div>
-                      </div>
-                    </Card.Body>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              <div className="text-muted p-3 border" style={{ borderColor: 'var(--stoic-border)' }}>
-                <small>No scheduled blocks for {day}</small>
-              </div>
-            )}
-          </div>
+      <Row className="mb-3 g-3">
+        {cards.map(card => (
+          <Col key={card.title} xs={6} lg>
+            <Card className="card-stoic revenue-card h-100">
+              <Card.Body className="p-3">
+                <h6 className="mb-1">{card.title}</h6>
+                <div className={`revenue-value ${card.className || ''}`}>{card.value}</div>
+                <div className="revenue-note mt-1">{card.note}</div>
+              </Card.Body>
+            </Card>
+          </Col>
         ))}
-      </div>
+      </Row>
 
-      <div className="mt-4 text-center">
+      <Card className="card-stoic mb-3 execute-calendar">
+        <Card.Body>
+          <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <h6 className="mb-0">Weekly Calendar</h6>
+            <div className="status-legend">
+              <span><span className="swatch" style={{ backgroundColor: '#2fd05f' }} />Completed</span>
+              <span><span className="swatch" style={{ backgroundColor: '#fbaed2' }} />Mothballed</span>
+              <span><span className="swatch" style={{ backgroundColor: '#9ca3af' }} />Abandoned</span>
+            </div>
+          </div>
+          <div className="calendar-with-lane">
+            <TimeGridCalendar
+              blocks={schedule.blocks}
+              tasks={tasks}
+              availability={resolvedAvailability}
+              hourHeight={80}
+              currentTime={currentTime}
+              showBlockActions
+              onBlockAction={handleBlockAction}
+            />
+          </div>
+        </Card.Body>
+      </Card>
+
+      <div className="mt-4 mb-4 text-center">
         <Button
           className="btn-stoic me-2"
           onClick={() => onNavigate('setup')}

@@ -2,6 +2,7 @@
 
 export type Priority = 'earth' | 'water' | 'fire' | 'air';
 export type BlockType = 'floater' | 'anchor';
+export type BlockStatus = 'active' | 'mothballed' | 'abandoned';
 export type AdjustmentType = 'mothball' | 'loan' | 'abandon' | 'add';
 
 export interface Objective {
@@ -52,6 +53,7 @@ export interface ScheduleBlock {
   durationMinutes: number;
   completed: boolean;
   completedAt?: Date;
+  status?: BlockStatus; // defaults to active; mothballed and abandoned blocks stop counting towards nominal revenue
   isSporadic: boolean;
   description?: string;
   subItems?: Array<{ id: string; label: string; hours: number; isBuffer?: boolean }>; // subobjectives shown inside a candidate block

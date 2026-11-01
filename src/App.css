@@ -339,14 +339,29 @@ body.tech-theme .modal-content {
   z-index: 2;
 }
 
-.time-grid-block.completed {
-  opacity: 0.55;
-}
-
 .time-grid-block[data-priority='earth'] { background-color: #cc7722; }
 .time-grid-block[data-priority='water'] { background-color: #1b2b5e; }
 .time-grid-block[data-priority='fire']  { background-color: #ff6347; }
 .time-grid-block[data-priority='air']   { background-color: #4169e1; }
+
+/* Execution status colors override the element color */
+.time-grid-block.status-completed {
+  background-color: #2fd05f;
+  color: #052e16;
+}
+
+.time-grid-block.status-mothballed {
+  background-color: #fbaed2;
+  color: #4a1d3a;
+}
+
+.time-grid-block.status-abandoned {
+  background-color: #9ca3af;
+  color: #374151;
+  opacity: 0.75;
+  box-shadow: none;
+  z-index: 1; /* new work may overlap abandoned blocks and should sit on top */
+}
 
 .time-grid-block-heading {
   display: flex;
@@ -376,13 +391,6 @@ body.tech-theme .modal-content {
   font-size: 0.7rem;
   line-height: 1;
   padding: 0 2px;
-  cursor: pointer;
-}
-
-.time-grid-check {
-  display: block;
-  font-size: 0.58rem;
-  margin-top: 1px;
   cursor: pointer;
 }
 
@@ -576,4 +584,117 @@ body.tech-theme .modal-content {
 /* The Water navy is too dark to read as text on the Tech theme's navy cards */
 body.tech-theme .priority-water {
   color: #7f9cf5;
+}
+
+/* ===== Execute: block action buttons ===== */
+.time-grid-block.has-actions {
+  display: flex;
+  flex-direction: column;
+}
+
+.time-grid-block-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.time-grid-actions {
+  flex: none;
+  display: flex;
+  justify-content: space-around;
+  gap: 2px;
+  margin: 2px -2px -1px;
+  padding-top: 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.time-grid-block.status-completed .time-grid-actions,
+.time-grid-block.status-mothballed .time-grid-actions,
+.time-grid-block.status-abandoned .time-grid-actions {
+  border-top-color: rgba(0, 0, 0, 0.2);
+}
+
+.time-grid-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.time-grid-action:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.28);
+}
+
+.time-grid-block.status-completed .time-grid-action:hover:not(:disabled),
+.time-grid-block.status-mothballed .time-grid-action:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.12);
+}
+
+.time-grid-action.pressed {
+  background-color: rgba(0, 0, 0, 0.18);
+}
+
+.time-grid-action:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Current time marker */
+.time-grid-now {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px solid #e03131;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.time-grid-now::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: -5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #e03131;
+}
+
+/* ===== Execute: revenue summary ===== */
+.revenue-card .revenue-value {
+  font-size: 1.5rem;
+  line-height: 1.1;
+}
+
+.revenue-card .revenue-note {
+  font-size: 0.7rem;
+  opacity: 0.75;
+}
+
+.execute-calendar .time-grid-calendar {
+  max-height: 720px;
+}
+
+.status-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.75rem;
+}
+
+.status-legend .swatch {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 3px;
+  margin-right: 0.3rem;
+  vertical-align: -1px;
 }
