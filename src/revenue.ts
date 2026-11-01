@@ -7,7 +7,7 @@
 // Balance:         actual - nominal (mothballed and abandoned tasks no longer count towards nominal)
 
 import type { ScheduleBlock } from './types';
-import { DAYS_OF_WEEK, timeToMinutes } from './utils';
+import { DAYS_OF_WEEK, getWeekStartDate, timeToMinutes } from './utils';
 
 export interface RevenueStats {
   nominal: number; // minutes
@@ -17,13 +17,9 @@ export interface RevenueStats {
   balance: number;
 }
 
-// Monday 00:00 of the week a schedule applies to. Sunday is the last day of a week,
-// so planning on a Sunday means planning the upcoming week.
+// Sunday 00:00 of the week a schedule applies to (weeks run Sunday to Saturday)
 export function planningWeekStart(date: Date): Date {
-  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const day = start.getDay();
-  start.setDate(start.getDate() + (day === 0 ? 1 : 1 - day));
-  return start;
+  return getWeekStartDate(date);
 }
 
 function blockDate(weekStart: Date, day: string, time: string): Date {

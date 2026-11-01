@@ -264,13 +264,13 @@ body.tech-theme .modal-content {
 }
 
 .time-grid-axis-spacer {
-  height: 34px;
+  height: var(--day-header-height, 44px);
 }
 
 .time-grid-time-label {
   position: absolute;
   right: 6px;
-  margin-top: 34px;
+  margin-top: var(--day-header-height, 44px);
   transform: translateY(-50%);
   font-size: 0.65rem;
   color: #999;
@@ -289,10 +289,12 @@ body.tech-theme .modal-content {
 }
 
 .time-grid-day-header {
-  height: 34px;
-  line-height: 34px;
+  height: var(--day-header-height, 44px);
   margin: 0;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 1px;
@@ -303,9 +305,31 @@ body.tech-theme .modal-content {
   z-index: 3;
 }
 
+.time-grid-day-date {
+  font-size: 0.65rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  opacity: 0.75;
+}
+
+/* Today's column header is picked out so the date is easy to find */
+.time-grid-day-header.today {
+  background-color: var(--stoic-accent);
+  color: #fff;
+}
+
+.time-grid-day-header.today .time-grid-day-date {
+  opacity: 1;
+}
+
 .tech-theme .time-grid-day-header {
   background-color: #1a1f3a;
   border-color: var(--tech-border);
+}
+
+.tech-theme .time-grid-day-header.today {
+  background-color: var(--tech-accent);
+  color: #0a0e27;
 }
 
 .time-grid-lane {
@@ -697,4 +721,33 @@ body.tech-theme .priority-water {
   border-radius: 3px;
   margin-right: 0.3rem;
   vertical-align: -1px;
+}
+
+/* ===== Week banner: which week a page is about ===== */
+.week-banner-dates {
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.week-banner-badge {
+  display: inline-block;
+  margin-left: 0.6rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  vertical-align: 2px;
+}
+
+.week-banner-badge.current { background-color: #2fd05f; color: #052e16; }
+.week-banner-badge.past { background-color: #9ca3af; color: #1f2937; }
+.week-banner-badge.upcoming { background-color: #4169e1; color: #fff; }
+
+.week-banner-note {
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  opacity: 0.8;
 }

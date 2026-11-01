@@ -7,6 +7,7 @@ import { computeRevenue, formatMinutes, planningWeekStart } from '../revenue';
 import TimeGridCalendar, { type BlockAction } from '../components/TimeGridCalendar';
 import NotificationSettings from '../components/NotificationSettings';
 import CalendarSync from '../components/CalendarSync';
+import WeekBanner from '../components/WeekBanner';
 
 interface ExecutionPageProps {
   schedule: WeeklySchedule | null;
@@ -78,7 +79,7 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
   // Only draw the "now" line when today falls inside the planned week
   const inWeek = now >= weekStart && now.getTime() < weekStart.getTime() + 7 * DAY_MS;
   const currentTime = inWeek
-    ? { day: DAYS_OF_WEEK[(now.getDay() + 6) % 7], minutes: now.getHours() * 60 + now.getMinutes() }
+    ? { day: DAYS_OF_WEEK[now.getDay()], minutes: now.getHours() * 60 + now.getMinutes() }
     : undefined;
 
   const balanceClass = stats.balance >= 0 ? 'balance-positive' : 'balance-negative';
@@ -115,6 +116,7 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
   return (
     <Container fluid className="fade-in">
       <h1 className="page-title">Execute Your Week</h1>
+      <WeekBanner weekStart={weekStart} />
 
       <Row className="mb-3 g-3">
         {cards.map(card => (
@@ -148,6 +150,7 @@ const ExecutionPage: React.FC<ExecutionPageProps> = ({
               tasks={tasks}
               availability={resolvedAvailability}
               hourHeight={80}
+              weekStart={weekStart}
               currentTime={currentTime}
               showBlockActions
               onBlockAction={handleBlockAction}

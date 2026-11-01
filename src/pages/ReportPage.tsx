@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
 import { Card, Button, Container, Row, Col, Table, ProgressBar } from 'react-bootstrap';
 import type { Task, WeeklySchedule } from '../types';
-import { isRigid } from '../utils';
+import { DAYS_OF_WEEK, isRigid } from '../utils';
 import { computeRevenue, planningWeekStart } from '../revenue';
+import WeekBanner from '../components/WeekBanner';
 
 interface ReportPageProps {
   schedule: WeeklySchedule | null;
@@ -50,11 +51,10 @@ const ReportPage: React.FC<ReportPageProps> = ({ schedule, tasks, onNavigate }) 
     // Calculate per-hour balance (simplified)
     const perHourBalance: Array<{ hour: number; balance: number }> = [];
     let cumulativeBalance = 0;
-    schedule.blocks
+    [...schedule.blocks]
       .sort((a, b) => {
-        const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
         return (
-          dayOrder.indexOf(a.dayOfWeek) - dayOrder.indexOf(b.dayOfWeek) ||
+          DAYS_OF_WEEK.indexOf(a.dayOfWeek) - DAYS_OF_WEEK.indexOf(b.dayOfWeek) ||
           parseInt(a.startTime) - parseInt(b.startTime)
         );
       })
@@ -109,6 +109,7 @@ const ReportPage: React.FC<ReportPageProps> = ({ schedule, tasks, onNavigate }) 
   return (
     <Container className="fade-in">
       <h1 className="page-title">Weekly Performance Report</h1>
+      {schedule && <WeekBanner weekStart={planningWeekStart(new Date(schedule.weekStartDate))} />}
 
       <Row className="mb-4">
         <Col md={6}>

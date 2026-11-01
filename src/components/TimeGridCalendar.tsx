@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ScheduleBlock, Task } from '../types';
-import { DAYS_OF_WEEK, PRIORITY_LABELS, minutesToTime, timeToMinutes, formatDurationHours, isRigid } from '../utils';
+import { DAYS_OF_WEEK, PRIORITY_LABELS, addDays, formatShortDate, isSameDay, minutesToTime, timeToMinutes, formatDurationHours, isRigid } from '../utils';
 import type { Availability, TimeWindow } from '../availability';
 
 export type BlockAction = 'toggle-complete' | 'toggle-mothball' | 'abandon';
@@ -15,6 +15,7 @@ interface TimeGridCalendarProps {
   showCandidateLane?: boolean;
   showBlockActions?: boolean; // completion / mothball / abandon buttons on flexible blocks
   hourHeight?: number;
+  weekStart?: Date; // Sunday of the week shown; adds the date to each day header
   currentTime?: { day: string; minutes: number }; // draws a "now" line
   onMoveBlock?: (block: ScheduleBlock, dayOfWeek: string, startTime: string) => void;
   onPlaceCandidate?: (candidate: ScheduleBlock, subItemId: string | undefined, dayOfWeek: string, startTime: string) => void;
@@ -95,6 +96,7 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
   showCandidateLane = false,
   showBlockActions = false,
   hourHeight = 64,
+  weekStart,
   currentTime,
   onMoveBlock,
   onPlaceCandidate,
@@ -102,6 +104,11 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
   onBlockAction,
 }) => {
   const [hover, setHover] = useState<{ block: ScheduleBlock; x: number; y: number } | null>(null);
+
+  // Date shown under each day name, and which column is today
+  const dateOfDay = (day: string): Date | null =>
+    weekStart ? addDays(weekStart, DAYS_OF_WEEK.indexOf(day)) : null;
+  const today = new Date();
 
   // The visible hours follow availability, widened to keep every placed block in view
   const range = useMemo<TimeWindow>(() => {
@@ -144,8 +151,9 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
     const description = task?.description || block.description;
     const recurrence = task ? formatRecurrence(task) : null;
 
+    const date = dateOfDay(block.dayOfWeek);
     const rows: Array<[string, string]> = [
-      ['When', `${block.dayOfWeek} ${block.startTime} - ${block.endTime}`],
+      ['When', `${block.dayOfWeek}${date ? `, ${formatShortDate(date)}` : ''} ${block.startTime} - ${block.endTime}`],
       ['Length', `${block.durationMinutes} min (${formatDurationHours(block.durationMinutes)})`],
       ['Type', PRIORITY_LABELS[block.priority] || block.priority],
     ];
@@ -294,9 +302,14 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
             const dayBlocks = blocks
               .filter(block => block.dayOfWeek === day)
               .sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+            const dayDate = dateOfDay(day);
+            const isToday = dayDate !== null && isSameDay(dayDate, today);
             return (
               <div key={day} className="time-grid-day">
-                <h5 className="time-grid-day-header">{day}</h5>
+                <h5 className={`time-grid-day-header ${isToday ? 'today' : ''}`} aria-current={isToday ? 'date' : undefined}>
+                  <span className="time-grid-day-name">{day}</span>
+                  {dayDate && <span className="time-grid-day-date">{formatShortDate(dayDate)}</span>}
+                </h5>
                 <div
                   className="time-grid-lane"
                   style={{ height: `${((range.end - range.start) / 60) * hourHeight}px` }}

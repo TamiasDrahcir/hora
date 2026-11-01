@@ -9,6 +9,7 @@ import { resolveAvailability, totalAvailabilityHours, DEFAULT_AVAILABILITY } fro
 import { planningWeekStart } from '../revenue';
 import TimeGridCalendar from '../components/TimeGridCalendar';
 import NotificationSettings from '../components/NotificationSettings';
+import WeekBanner from '../components/WeekBanner';
 
 interface SetupPageProps {
   tasks: Task[];
@@ -75,6 +76,12 @@ const SetupPage: React.FC<SetupPageProps> = ({
   const resolvedAvailability = useMemo(() => resolveAvailability(availabilityText), [availabilityText]);
   const availability = resolvedAvailability.availability;
   const availableHours = totalAvailabilityHours(availability);
+
+  // The week being planned: the schedule's own week, or the current week until one exists
+  const weekStart = useMemo(
+    () => planningWeekStart(schedule ? new Date(schedule.weekStartDate) : new Date()),
+    [schedule]
+  );
 
   // Prefill the editor from existing tasks when there is no saved script yet
   const effectiveScript = scriptText || (tasks.length > 0 ? tasksToScript(tasks) : '');
@@ -266,6 +273,7 @@ const SetupPage: React.FC<SetupPageProps> = ({
   return (
     <Container fluid className="fade-in">
       <h1 className="page-title">Setup Your Tasks</h1>
+      <WeekBanner weekStart={weekStart} />
 
       <Row>
         <Col lg={5} className="mb-4">
@@ -347,6 +355,7 @@ const SetupPage: React.FC<SetupPageProps> = ({
                   candidateBlocks={candidateBlocks}
                   tasks={tasks}
                   availability={availability}
+                  weekStart={weekStart}
                   editable
                   showCandidateLane
                   onMoveBlock={handleMoveBlock}

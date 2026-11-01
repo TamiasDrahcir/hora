@@ -2,7 +2,8 @@
 
 import type { Task, ScheduleBlock, Priority, Objective } from './types';
 
-export const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+// The week runs Sunday to Saturday; this order is also the calendar's column order
+export const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export const PRIORITY_LABELS: Record<string, string> = {
   earth: 'Earth (rigid, important)',
@@ -13,11 +14,33 @@ export const PRIORITY_LABELS: Record<string, string> = {
 export const WORKING_HOURS = 9; // 9 AM to 6 PM
 export const MINUTES_PER_HOUR = 60;
 
+// Sunday 00:00 of the week containing the given date
 export function getWeekStartDate(date: Date = new Date()): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is Sunday
-  return new Date(d.setDate(diff));
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  start.setDate(start.getDate() - start.getDay());
+  return start;
+}
+
+export function addDays(date: Date, days: number): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+export function isSameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+// e.g. "Nov 1"
+export function formatShortDate(date: Date): string {
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// e.g. "Sun, Nov 1 - Sat, Nov 7, 2026" (the year is shown on both ends when the week spans two years)
+export function formatWeekRange(weekStart: Date): string {
+  const end = addDays(weekStart, 6);
+  const withWeekday = (date: Date, year: boolean) =>
+    date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', ...(year ? { year: 'numeric' } : {}) });
+  const spansYears = weekStart.getFullYear() !== end.getFullYear();
+  return `${withWeekday(weekStart, spansYears)} \u2013 ${withWeekday(end, true)}`;
 }
 
 export function calculateTotalAvailableHours(hoursPerDay: number): number {
