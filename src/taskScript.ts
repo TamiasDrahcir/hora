@@ -7,7 +7,10 @@
 //     YYMMDD = recurring until date
 //
 //   Flexible body:
-//     REQ <hours> BY <day><time>      e.g. REQ 5 BY F2359 (BY defaults to F2359)
+//     REQ <hours> [FROM <day><time>] [BY <day><time>]
+//                                     e.g. REQ 5 FROM W0900 BY F1700
+//                                     FROM = earliest start (defaults to the start of the week)
+//                                     BY   = deadline (defaults to F2359)
 //     <SubobjectiveName> : <hours>    optional; defaults to hour-long Subobj1..N
 //                                     (unassigned hours become Buffer)
 //   Rigid body (fixed timeslots):
@@ -18,7 +21,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import type { Task, Objective, TimeSlot } from './types';
-import { parseMilitaryInterval, formatMilitaryInterval, isRigid } from './utils';
+import { parseMilitaryInterval, formatMilitaryInterval, formatDurationHours, isRigid, taskWindow, taskWindowOnDay, DAYS_OF_WEEK } from './utils';
 
 export interface ScriptError {
   line: number; // 1-based, 0 when not tied to a line
@@ -46,7 +49,7 @@ const LETTER_BY_DAY: Record<string, string> = Object.fromEntries(
 
 const HEADER_RE = /^(.*\S)\s*\(\s*([A-Za-z0-9]{1,7})\s*-\s*([A-Za-z0-9]{1,4})\s*\)\s*(.*)$/;
 const RIGID_RE = /^\{([MTWRFSU]+)\}\s*(\d{3,4}\s*-\s*\d{3,4})$/;
-const REQ_RE = /^REQ\s+(\d+(?:\.\d+)?)(?:\s+BY\s+([MTWRFSU])(\d{4}))?\s*$/i;
+const REQ_RE = /^REQ\s+(\d+(?:\.\d+)?)(?:\s+FROM\s+([MTWRFSU])(\d{4}))?(?:\s+BY\s+([MTWRFSU])(\d{4}))?\s*$/i;
 const DESC_RE = /^DESC\s*:\s*(.+)$/i;
 const SUBOBJ_RE = /^(.*\S)\s*:\s*(\d+(?:\.\d+)?)\s*$/;
 const DATE_RE = /^\d{6}$/;
@@ -62,6 +65,8 @@ interface DraftTask {
   req?: number;
   deadlineDay?: string;
   deadlineTime?: string;
+  startDay?: string;
+  startTime?: string;
   subobjs: Array<{ name: string; hours: number; line: number }>;
   slots: Array<{ day: string; startTime: string; endTime: string }>;
 }
@@ -173,13 +178,52 @@ export function parseTaskScript(script: string, existingTasks: Task[] = []): Par
 
     const deadlineDay = d.deadlineDay || 'Friday';
     const deadlineTime = d.deadlineTime || '23:59';
+    const deadline = `${deadlineDay} ${deadlineTime}`;
+    const startFrom = d.startDay && d.startTime ? `${d.startDay} ${d.startTime}` : undefined;
+
+    if (startFrom) {
+      const window = taskWindow({ startFrom, deadline });
+      if (window.start >= window.end) {
+        errors.push({
+          line: d.line,
+          message: `"${d.name}": FROM ${startFrom} must come before BY ${deadline}${d.deadlineDay ? '' : ' (BY defaults to Friday 23:59 - add a BY)'}.`,
+        });
+        return;
+      }
+
+      const spanMinutes = window.end - window.start;
+      if (req * 60 > spanMinutes) {
+        errors.push({
+          line: d.line,
+          message: `"${d.name}": REQ ${req}h doesn't fit between FROM ${startFrom} and BY ${deadline} (${formatDurationHours(spanMinutes)}).`,
+        });
+        return;
+      }
+
+      // Each subobjective is placed in one piece, so it must fit within a single day of the window
+      const longestDay = Math.max(
+        ...DAYS_OF_WEEK.map(day => {
+          const slot = taskWindowOnDay({ startFrom, deadline }, day);
+          return slot ? slot.end - slot.start : 0;
+        })
+      );
+      const tooLong = subobjs.find(s => s.name !== 'Buffer' && s.hours * 60 > longestDay);
+      if (tooLong) {
+        errors.push({
+          line: tooLong.line,
+          message: `"${d.name}": ${tooLong.name} (${tooLong.hours}h) is longer than any single day between FROM ${startFrom} and BY ${deadline}.`,
+        });
+        return;
+      }
+    }
 
     tasks.push({
       id: prev?.id || uuidv4(),
       code: d.code,
       name: d.name,
       hoursRequired: req,
-      deadline: `${deadlineDay} ${deadlineTime}`,
+      deadline,
+      startFrom,
       priority: d.important ? 'water' : 'air',
       description: d.description,
       objectives,
@@ -258,17 +302,37 @@ export function parseTaskScript(script: string, existingTasks: Task[] = []): Par
         return;
       }
       draft.req = parseFloat(req[1]);
-      if (req[2]) {
-        const time = req[3];
+      const readTime = (letter: string, time: string, label: string): { day: string; time: string } | null => {
         const hours = parseInt(time.slice(0, 2), 10);
         const minutes = parseInt(time.slice(2), 10);
         if (hours > 23 || minutes > 59) {
-          errors.push({ line: lineNo, message: `Invalid deadline time "${time}".` });
-        } else {
-          draft.deadlineDay = DAY_BY_LETTER[req[2].toUpperCase()];
-          draft.deadlineTime = militaryToTime(time);
+          errors.push({ line: lineNo, message: `Invalid ${label} time "${time}" (expected 0000-2359).` });
+          return null;
+        }
+        return { day: DAY_BY_LETTER[letter.toUpperCase()], time: militaryToTime(time) };
+      };
+      if (req[2]) {
+        const from = readTime(req[2], req[3], 'FROM');
+        if (from) {
+          draft.startDay = from.day;
+          draft.startTime = from.time;
         }
       }
+      if (req[4]) {
+        const by = readTime(req[4], req[5], 'BY');
+        if (by) {
+          draft.deadlineDay = by.day;
+          draft.deadlineTime = by.time;
+        }
+      }
+      return;
+    }
+
+    if (/^REQ\b/i.test(line)) {
+      errors.push({
+        line: lineNo,
+        message: `Invalid REQ line "${line}" (expected: REQ <hours> [FROM <day><time>] [BY <day><time>], e.g. REQ 3 FROM W0900 BY F1700).`,
+      });
       return;
     }
 
@@ -329,7 +393,12 @@ export function tasksToScript(tasks: Task[]): string {
       const [dayName, time] = task.deadline.split(' ');
       const letter = LETTER_BY_DAY[dayName] || 'F';
       const military = time ? formatMilitaryTime(time) : '2359';
-      lines.push(`REQ ${task.hoursRequired} BY ${letter}${military}`);
+      let from = '';
+      if (task.startFrom) {
+        const [startDay, startTime] = task.startFrom.split(' ');
+        if (LETTER_BY_DAY[startDay] && startTime) from = ` FROM ${LETTER_BY_DAY[startDay]}${formatMilitaryTime(startTime)}`;
+      }
+      lines.push(`REQ ${task.hoursRequired}${from} BY ${letter}${military}`);
       for (const obj of task.objectives) {
         if (obj.name === 'Buffer') continue; // buffer is derived
         lines.push(`${obj.name} : ${obj.hoursRequired}`);

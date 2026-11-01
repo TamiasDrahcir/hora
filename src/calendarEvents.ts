@@ -44,6 +44,7 @@ export function buildCalendarEvents(schedule: WeeklySchedule, tasks: Task[]): Ca
       const lines = [label, PRIORITY_LABELS[block.priority] || block.priority];
       if (task && !isRigid(task.priority)) {
         lines.push(`Task total: ${task.hoursRequired}h`);
+        if (task.startFrom) lines.push(`Starts: ${task.startFrom}`);
         if (task.deadline) lines.push(`Deadline: ${task.deadline}`);
       }
       const note = task?.description || block.description;

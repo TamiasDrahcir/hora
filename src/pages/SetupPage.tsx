@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Card, Button, Form, Container, Row, Col } from 'react-bootstrap';
 import { v4 as uuidv4 } from 'uuid';
 import type { Task, ScheduleBlock, WeeklySchedule } from '../types';
-import { isRigid, timeToMinutes, minutesToTime } from '../utils';
+import { isRigid, timeToMinutes, minutesToTime, fitsTaskWindow } from '../utils';
 import { parseTaskScript, tasksToScript, type ScriptError } from '../taskScript';
 import { scheduleWeek } from '../scheduler';
 import { resolveAvailability, totalAvailabilityHours, DEFAULT_AVAILABILITY } from '../availability';
@@ -41,7 +41,9 @@ const SYNTAX_HELP = `TaskName (SECTION-CODE) [!] [* | YYMMDD]
   YYMMDD recurring until date (e.g. 261231)
 
 Flexible task body:
-  REQ <hours> BY <day><time>   e.g. REQ 5 BY F2359 (BY optional)
+  REQ <hours> [FROM <day><time>] [BY <day><time>]
+                               e.g. REQ 5 FROM W0900 BY F1700
+                               FROM = earliest start, BY = deadline (default F2359)
   <Subobjective> : <hours>     optional; defaults to 1h Subobj1..N
                                unassigned hours become Buffer
 
@@ -217,9 +219,20 @@ const SetupPage: React.FC<SetupPageProps> = ({
     );
   };
 
+  // Flexible tasks may only be placed between their FROM and BY times
+  const outsideWindowNotice = (task: Task | undefined, day: string, startTime: string, durationMinutes: number): string | null => {
+    if (!task || isRigid(task.priority) || fitsTaskWindow(task, day, startTime, durationMinutes)) return null;
+    return `${task.code} can only be scheduled ${task.startFrom ? `from ${task.startFrom} ` : ''}by ${task.deadline}.`;
+  };
+
   const handleMoveBlock = (block: ScheduleBlock, day: string, startTime: string) => {
     if (overlapsExisting(day, startTime, block.durationMinutes, block.id)) {
       setCalendarNotice('That spot overlaps another block.');
+      return;
+    }
+    const windowNotice = outsideWindowNotice(tasks.find(t => t.id === block.taskId), day, startTime, block.durationMinutes);
+    if (windowNotice) {
+      setCalendarNotice(windowNotice);
       return;
     }
     setCalendarNotice(null);
@@ -235,6 +248,11 @@ const SetupPage: React.FC<SetupPageProps> = ({
 
     if (overlapsExisting(day, startTime, durationMinutes)) {
       setCalendarNotice('That spot overlaps another block.');
+      return;
+    }
+    const windowNotice = outsideWindowNotice(task, day, startTime, durationMinutes);
+    if (windowNotice) {
+      setCalendarNotice(windowNotice);
       return;
     }
     setCalendarNotice(null);

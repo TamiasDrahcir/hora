@@ -163,6 +163,7 @@ const TimeGridCalendar: React.FC<TimeGridCalendarProps> = ({
     }
     if (!rigid && task) {
       rows.push(['Task total', `${task.hoursRequired}h`]);
+      if (task.startFrom) rows.push(['Starts', task.startFrom]);
       if (task.deadline) rows.push(['Deadline', task.deadline]);
     }
     if (recurrence) rows.push(['Repeats', recurrence]);

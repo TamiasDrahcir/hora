@@ -7,6 +7,7 @@ import {
   timeToMinutes,
   minutesToTime,
   isRigid,
+  taskWindowOnDay,
   DAYS_OF_WEEK
 } from './utils';
 import { totalAvailabilityHours, type Availability } from './availability';
@@ -62,8 +63,6 @@ export class HORAScheduler {
     );
 
     for (const task of sortedTasks) {
-      const { days, limitFor } = this.getDeadlineWindow(task);
-
       // A task is represented by its subobjectives; only a task without any is placed as a whole.
       // Buffer is unscheduled slack, so it is never placed.
       const placeable = task.objectives.filter(o => o.name !== 'Buffer' && !o.completed);
@@ -71,41 +70,23 @@ export class HORAScheduler {
 
       for (const objective of items) {
         const hours = objective ? objective.hoursRequired : task.hoursRequired;
-        // Anything that doesn't fit before the deadline stays unplaced (in the candidate lane)
-        this.placeContinuous(task, objective, days, limitFor, hours * 60);
+        // Anything that doesn't fit inside the FROM..BY window stays unplaced (in the candidate lane)
+        this.placeContinuous(task, objective, hours * 60);
       }
     }
   }
 
-  // Available days up to the deadline, and how late work may run on each of them
-  private getDeadlineWindow(task: Task): { days: string[]; limitFor: (day: string) => number } {
-    const [deadlineDay, deadlineTime] = (task.deadline || '').split(' ');
-    const deadlineIndex = DAYS_OF_WEEK.indexOf(deadlineDay);
-
-    const days = DAYS_OF_WEEK.filter(
-      (day, index) => (this.availability[day]?.length ?? 0) > 0 && (deadlineIndex < 0 || index <= deadlineIndex)
-    );
-    const limitFor = (day: string) =>
-      day === deadlineDay && deadlineTime ? timeToMinutes(deadlineTime) : 24 * 60;
-
-    return { days, limitFor };
-  }
-
-  private placeContinuous(
-    task: Task,
-    objective: Objective | undefined,
-    days: string[],
-    limitFor: (day: string) => number,
-    requiredMinutes: number
-  ): boolean {
-    for (const day of days) {
-      const limit = limitFor(day);
+  private placeContinuous(task: Task, objective: Objective | undefined, requiredMinutes: number): boolean {
+    for (const day of DAYS_OF_WEEK) {
+      const span = taskWindowOnDay(task, day);
+      if (!span || !this.availability[day]?.length) continue;
 
       for (const gap of findGapsInWindows(this.blocks, day, this.availability[day])) {
-        const end = Math.min(gap.end, limit);
+        const start = Math.max(gap.start, span.start);
+        const end = Math.min(gap.end, span.end);
 
-        if (end - gap.start >= requiredMinutes) {
-          this.addBlock(task, objective, day, minutesToTime(gap.start), minutesToTime(gap.start + requiredMinutes), requiredMinutes);
+        if (end - start >= requiredMinutes) {
+          this.addBlock(task, objective, day, minutesToTime(start), minutesToTime(start + requiredMinutes), requiredMinutes);
           return true;
         }
       }

@@ -28,7 +28,8 @@ export interface Task {
   name: string;
   hoursRequired: number;
   description?: string;
-  deadline: string; // day of week
+  deadline: string; // "<Day> HH:mm" the work must end by
+  startFrom?: string; // "<Day> HH:mm" the work may not start before
   objectives: Objective[];
   priority: Priority;
   completed: boolean;

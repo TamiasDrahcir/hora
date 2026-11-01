@@ -68,6 +68,48 @@ export function minutesToTime(minutes: number): string {
   return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
 }
 
+const MINUTES_PER_DAY = 24 * 60;
+
+// Minutes since the start of the (Sunday-first) week for a "<Day> HH:mm" value, or null if it isn't one
+export function weekMinuteOf(value: string | undefined): number | null {
+  const [day, time] = (value || '').split(' ');
+  const index = DAYS_OF_WEEK.indexOf(day);
+  if (index < 0) return null;
+  return index * MINUTES_PER_DAY + (time ? timeToMinutes(time) : MINUTES_PER_DAY - 1);
+}
+
+// A flexible task's allowed span, in minutes since the start of the week
+export function taskWindow(task: Pick<Task, 'startFrom' | 'deadline'>): { start: number; end: number } {
+  return {
+    start: weekMinuteOf(task.startFrom) ?? 0,
+    end: weekMinuteOf(task.deadline) ?? 7 * MINUTES_PER_DAY,
+  };
+}
+
+// The part of a task's window that falls on a day, as minutes from midnight (null if none)
+export function taskWindowOnDay(
+  task: Pick<Task, 'startFrom' | 'deadline'>,
+  day: string
+): { start: number; end: number } | null {
+  const offset = DAYS_OF_WEEK.indexOf(day) * MINUTES_PER_DAY;
+  const window = taskWindow(task);
+  const start = Math.max(0, window.start - offset);
+  const end = Math.min(MINUTES_PER_DAY, window.end - offset);
+  return end > start ? { start, end } : null;
+}
+
+// Whether a block of the given length starting at startTime stays inside the task's FROM..BY window
+export function fitsTaskWindow(
+  task: Pick<Task, 'startFrom' | 'deadline'>,
+  day: string,
+  startTime: string,
+  durationMinutes: number
+): boolean {
+  const slot = taskWindowOnDay(task, day);
+  const start = timeToMinutes(startTime);
+  return !!slot && start >= slot.start && start + durationMinutes <= slot.end;
+}
+
 // Parse a military-style interval like "2230-2300" (or "900-1030") into HH:mm times
 export function parseMilitaryInterval(input: string): { startTime: string; endTime: string } | null {
   const match = input.trim().match(/^(\d{3,4})\s*-\s*(\d{3,4})$/);
